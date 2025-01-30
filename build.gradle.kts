@@ -9,5 +9,6 @@ dependencies {
     // https://msgpack.org/
     implementation("org.msgpack:jackson-dataformat-msgpack:latest.release")
 
+    implementation("io.micrometer:micrometer-core:latest.release")
     implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:latest.release")
 }

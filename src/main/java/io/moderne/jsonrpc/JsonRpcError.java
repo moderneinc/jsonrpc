@@ -18,8 +18,6 @@ package io.moderne.jsonrpc;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
 
-import javax.annotation.Nullable;
-
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcError extends JsonRpcResponse {
