@@ -1,0 +1,14 @@
+bin/
+build/
+.gradle/
+out/
+*/src/main/gen/
+.idea/
+.project
+.classpath
+.settings/
+.DS_Store
+**/node_modules/
+IDE.properties
+# ASDF https://asdf-vm.com/
+.tool-versions
