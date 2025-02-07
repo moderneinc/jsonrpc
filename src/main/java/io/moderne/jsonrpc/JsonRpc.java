@@ -31,7 +31,7 @@ public class JsonRpc {
     private volatile boolean shutdown = false;
 
     private final MessageHandler messageHandler;
-    private final Map<String, CompletableFuture<JsonRpcSuccess<?>>> openRequests = new ConcurrentHashMap<>();
+    private final Map<String, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
     private ExecutorService executorService = Executors.newSingleThreadExecutor();
 
     public JsonRpc method(String name, JsonRpcMethod method) {
@@ -44,12 +44,11 @@ public class JsonRpc {
         return this;
     }
 
-    public <P> CompletableFuture<JsonRpcSuccess<P>> send(JsonRpcRequest request) {
-        CompletableFuture<JsonRpcSuccess<?>> response = new CompletableFuture<>();
+    public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
+        CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
         openRequests.put(request.getId(), response);
         messageHandler.send(request);
-        //noinspection unchecked,rawtypes
-        return (CompletableFuture) response;
+        return response;
     }
 
     public void notification(JsonRpcRequest request) {
@@ -63,11 +62,11 @@ public class JsonRpc {
                 JsonRpcMessage msg = messageHandler.receive();
                 if (msg instanceof JsonRpcResponse) {
                     JsonRpcResponse response = (JsonRpcResponse) msg;
-                    CompletableFuture<JsonRpcSuccess<?>> responseFuture = openRequests.remove(response.getId());
+                    CompletableFuture<JsonRpcSuccess> responseFuture = openRequests.remove(response.getId());
                     if (response instanceof JsonRpcError) {
                         responseFuture.completeExceptionally(new JsonRpcException((JsonRpcError) response));
                     } else if (response instanceof JsonRpcSuccess) {
-                        responseFuture.complete((JsonRpcSuccess<?>) response);
+                        responseFuture.complete((JsonRpcSuccess) response);
                     }
                 } else if (msg instanceof JsonRpcRequest) {
                     JsonRpcRequest request = (JsonRpcRequest) msg;
@@ -78,7 +77,7 @@ public class JsonRpc {
                         try {
                             Object response = method.handle(request.getParams());
                             if (response != null) {
-                                messageHandler.send(new JsonRpcSuccess<>(request.getId(), response));
+                                messageHandler.send(new JsonRpcSuccess(request.getId(), response));
                             }
                         } catch (Exception e) {
                             messageHandler.send(JsonRpcError.internalError(request.getId(), e.getMessage()));

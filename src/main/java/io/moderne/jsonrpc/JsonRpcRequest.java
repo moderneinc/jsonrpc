@@ -15,6 +15,8 @@
  */
 package io.moderne.jsonrpc;
 
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.EqualsAndHashCode;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
@@ -24,6 +26,8 @@ import java.util.*;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcRequest extends JsonRpcMessage {
+    private static final ObjectMapper mapper = new ObjectMapper();
+
     String id;
     String method;
 
@@ -59,6 +63,11 @@ public class JsonRpcRequest extends JsonRpcMessage {
             }
             namedParameters.put(name, value);
             return this;
+        }
+
+        public Builder namedParameters(Object o) {
+            return namedParameters(mapper.convertValue(o, new TypeReference<Map<String, Object>>() {
+            }));
         }
 
         public Builder namedParameters(Map<String, Object> params) {

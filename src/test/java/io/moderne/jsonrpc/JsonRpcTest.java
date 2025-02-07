@@ -31,8 +31,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static io.moderne.jsonrpc.JsonRpcMethod.namedParameters;
-import static io.moderne.jsonrpc.JsonRpcMethod.positionalParameters;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -54,22 +52,22 @@ public class JsonRpcTest {
 
     @Test
     void requestResponse() throws ExecutionException, InterruptedException, TimeoutException {
-        JsonRpcSuccess<String> response = jsonRpc
-                .method("hello", namedParameters("name", (String name) -> "Hello " + name))
+        JsonRpcSuccess response = jsonRpc
+                .method("hello", JsonRpcMethod.named("name", (String name) -> "Hello " + name))
                 .start()
-                .<String>send(JsonRpcRequest.newRequest("hello")
+                .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
                         .namedParameter("name", "Jon")
                         .build())
                 .get(5, TimeUnit.SECONDS);
 
-        assertThat(response.getResult()).isEqualTo("Hello Jon");
+        assertThat(response.<String>getResult()).isEqualTo("Hello Jon");
     }
 
     @Test
     void methodThrowsException() {
         assertThatThrownBy(() -> jsonRpc
-                .method("hello", namedParameters("name", (String name) -> {
+                .method("hello", JsonRpcMethod.named("name", (String name) -> {
                     throw new IllegalStateException("Boom");
                 }))
                 .start()
@@ -85,7 +83,7 @@ public class JsonRpcTest {
     void notification() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         jsonRpc
-                .method("hello", namedParameters("name", (String name) -> {
+                .method("hello", JsonRpcMethod.named("name", (String name) -> {
                     assertThat(name).isEqualTo("Jon");
                     latch.countDown();
                     return null;
@@ -100,10 +98,10 @@ public class JsonRpcTest {
 
     @Test
     void positional() throws ExecutionException, InterruptedException, TimeoutException {
-        JsonRpcSuccess<String> response = jsonRpc
-                .method("hello", positionalParameters("name", (List<String> names) -> "Hello " + String.join(" and ", names)))
+        JsonRpcSuccess response = jsonRpc
+                .method("hello", JsonRpcMethod.positional((List<String> names) -> "Hello " + String.join(" and ", names)))
                 .start()
-                .<String>send(JsonRpcRequest.newRequest("hello")
+                .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
                         .positionalParameters("Jon", "Jim")
                         .build())
@@ -115,7 +113,7 @@ public class JsonRpcTest {
     @Test
     void positionalRequestNamedParamHandler() {
         assertThatThrownBy(() -> jsonRpc
-                .method("hello", namedParameters("name", (String name) -> "Hello " + name))
+                .method("hello", JsonRpcMethod.named("name", (String name) -> "Hello " + name))
                 .start()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())

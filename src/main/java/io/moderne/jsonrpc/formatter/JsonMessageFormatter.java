@@ -15,6 +15,7 @@
  */
 package io.moderne.jsonrpc.formatter;
 
+import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
@@ -31,6 +32,14 @@ import java.util.Map;
 public class JsonMessageFormatter implements MessageFormatter {
     ObjectMapper mapper = new ObjectMapper()
             .registerModule(new ParameterNamesModule());
+
+    public JsonMessageFormatter() {
+        mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()
+                .withCreatorVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
+                .withGetterVisibility(JsonAutoDetect.Visibility.NONE)
+                .withIsGetterVisibility(JsonAutoDetect.Visibility.NONE)
+                .withFieldVisibility(JsonAutoDetect.Visibility.ANY));
+    }
 
     @Override
     public JsonRpcMessage deserialize(InputStream in) throws IOException {

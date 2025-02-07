@@ -15,6 +15,14 @@
  */
 package io.moderne.jsonrpc;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
+
 import java.util.List;
 import java.util.Map;
 
@@ -22,7 +30,7 @@ public interface JsonRpcMethod {
     Object handle(Object params) throws Exception;
 
     @SuppressWarnings("unchecked")
-    static <P> JsonRpcMethod namedParameters(String p1, P1<P> handler) {
+    static <P> JsonRpcMethod named(String p1, P1<P> handler) {
         return params -> {
             if (params instanceof Map) {
                 Map<String, Object> paramMap = (Map<String, Object>) params;
@@ -34,7 +42,7 @@ public interface JsonRpcMethod {
     }
 
     @SuppressWarnings("unchecked")
-    static <P> JsonRpcMethod positionalParameters(String p1, P1<List<P>> handler) {
+    static <P> JsonRpcMethod positional(P1<List<P>> handler) {
         return params -> {
             if (params instanceof List) {
                 List<P> paramList = (List<P>) params;
@@ -46,7 +54,7 @@ public interface JsonRpcMethod {
     }
 
     @SuppressWarnings("unchecked")
-    static <P, Q> JsonRpcMethod namedParameters(String p1, String p2, P2<P, Q> handler) {
+    static <P, Q> JsonRpcMethod named(String p1, String p2, P2<P, Q> handler) {
         return params -> {
             if (params instanceof Map) {
                 Map<String, Object> paramMap = (Map<String, Object>) params;
@@ -57,8 +65,13 @@ public interface JsonRpcMethod {
         };
     }
 
+    static <T> JsonRpcMethod typed(Class<T> type, P1<T> handler) {
+        return params -> handler.handle(JsonRpcMethodParameterUtils
+                .convertNamedParameters(params, type));
+    }
+
     @SuppressWarnings("unchecked")
-    static <P, Q, R> JsonRpcMethod namedParameters(String p1, String p2, String p3, P3<P, Q, R> handler) {
+    static <P, Q, R> JsonRpcMethod named(String p1, String p2, String p3, P3<P, Q, R> handler) {
         return params -> {
             if (params instanceof Map) {
                 Map<String, Object> paramMap = (Map<String, Object>) params;
@@ -70,7 +83,7 @@ public interface JsonRpcMethod {
     }
 
     @SuppressWarnings("unchecked")
-    static <P, Q, R, S> JsonRpcMethod namedParameters(String p1, String p2, String p3, String p4, P4<P, Q, R, S> handler) {
+    static <P, Q, R, S> JsonRpcMethod named(String p1, String p2, String p3, String p4, P4<P, Q, R, S> handler) {
         return params -> {
             if (params instanceof Map) {
                 Map<String, Object> paramMap = (Map<String, Object>) params;
@@ -82,18 +95,39 @@ public interface JsonRpcMethod {
     }
 
     interface P1<P> {
-        Object handle(P p1);
+        Object handle(P p1) throws Exception;
     }
 
     interface P2<P, Q> {
-        Object handle(P p1, Q p2);
+        Object handle(P p1, Q p2) throws Exception;
     }
 
     interface P3<P, Q, R> {
-        Object handle(P p1, Q p2, R p3);
+        Object handle(P p1, Q p2, R p3) throws Exception;
     }
 
     interface P4<P, Q, R, S> {
-        Object handle(P p1, Q p2, R p3, S p4);
+        Object handle(P p1, Q p2, R p3, S p4) throws Exception;
+    }
+}
+
+class JsonRpcMethodParameterUtils {
+    private static final ObjectMapper mapper = JsonMapper.builder()
+            // to be able to construct classes that have @Data and a single field
+            // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
+            .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
+            .build()
+            .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+
+    public static <T> T convertNamedParameters(Object params, Class<T> clazz) throws Exception {
+        if (params instanceof Map) {
+            //noinspection unchecked
+            Map<String, Object> paramMap = (Map<String, Object>) params;
+            return mapper.convertValue(paramMap, clazz);
+        } else {
+            throw new Exception("Expected a named parameter map for method");
+        }
     }
 }
