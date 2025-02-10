@@ -21,14 +21,14 @@ public class TreeDataSendQueueTest {
           .collect(Collectors.toMap(s -> s, s -> UUID.randomUUID()));
 
         List<TreeDatum> diff = TreeDataSendQueue.listDifferences(after, before, ids::get,
-          ids::get, (anAfter, aBefore) -> null);
+          t -> "string", ids::get, (anAfter, aBefore) -> null);
 
         assertThat(diff).containsExactly(
-          new TreeDatum(TreeDatum.State.CHANGE, List.of(0, -1, -1, 2)),
-          new TreeDatum(TreeDatum.State.NO_CHANGE, null) /* A */,
-          new TreeDatum(TreeDatum.State.ADD, ids.get("E")),
-          new TreeDatum(TreeDatum.State.ADD, ids.get("F")),
-          new TreeDatum(TreeDatum.State.NO_CHANGE, null) /* C */
+          new TreeDatum(TreeDatum.State.CHANGE, null, List.of(0, -1, -1, 2)),
+          new TreeDatum(TreeDatum.State.NO_CHANGE, null, null) /* A */,
+          new TreeDatum(TreeDatum.State.ADD, "string", ids.get("E")),
+          new TreeDatum(TreeDatum.State.ADD, "string", ids.get("F")),
+          new TreeDatum(TreeDatum.State.NO_CHANGE, null, null) /* C */
         );
     }
 }

@@ -16,7 +16,6 @@
 package io.moderne.jsonrpc;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
@@ -41,14 +40,14 @@ public class JsonRpcSuccess extends JsonRpcResponse {
 
     String id;
 
+    /**
+     * No need for polymorphic deserialization here, since the result type will
+     * always be known by the requester.
+     */
     @Nullable
     Object result;
 
     public <V> V getResult(Class<V> resultType) {
-        return mapper.convertValue(result, resultType);
-    }
-
-    public <V> V getResult(TypeReference<V> resultType) {
         return mapper.convertValue(result, resultType);
     }
 }

@@ -37,10 +37,12 @@ public class JsonSendReceiveTest implements RewriteTest {
         PipedInputStream serverIn = new PipedInputStream(clientOut);
         PipedInputStream clientIn = new PipedInputStream(serverOut);
 
-        JsonRpc serverJsonRpc = new JsonRpc(new TraceMessageHandler("server", new HeaderDelimitedMessageHandler(serverIn, serverOut)));
+        JsonRpc serverJsonRpc = new JsonRpc(new TraceMessageHandler("server",
+          new HeaderDelimitedMessageHandler(serverIn, serverOut)));
         server = new RecipeRpc(serverJsonRpc, Duration.ofSeconds(10)).bind();
 
-        JsonRpc clientJsonRpc = new JsonRpc(new TraceMessageHandler("client", new HeaderDelimitedMessageHandler(clientIn, clientOut)));
+        JsonRpc clientJsonRpc = new JsonRpc(new TraceMessageHandler("client",
+          new HeaderDelimitedMessageHandler(clientIn, clientOut)));
         client = new RecipeRpc(clientJsonRpc, Duration.ofSeconds(10)).bind();
     }
 

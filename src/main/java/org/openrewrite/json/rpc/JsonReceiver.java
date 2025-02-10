@@ -98,7 +98,7 @@ public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
     public <T extends Json> List<JsonRightPadded<T>> receiveRightPadded(List<JsonRightPadded<T>> before, TreeDataReceiveQueue q) {
         return q.listDifferences(
                 before,
-                t -> newJsonRightPadded(),
+                (type, t) -> newJsonRightPadded(),
                 t -> onRightPaddedChanged(t, q)
         );
     }

@@ -19,28 +19,22 @@ import io.moderne.jsonrpc.handler.MessageHandler;
 import lombok.RequiredArgsConstructor;
 
 import java.util.Map;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
+import java.util.concurrent.*;
 
 @RequiredArgsConstructor
 public class JsonRpc {
+    private static final ForkJoinPool forkJoin = new ForkJoinPool(
+            4, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true);
+
     private final Map<String, JsonRpcMethod> methods = new ConcurrentHashMap<>();
 
     private volatile boolean shutdown = false;
 
     private final MessageHandler messageHandler;
     private final Map<String, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
-    private ExecutorService executorService = Executors.newSingleThreadExecutor();
 
     public JsonRpc method(String name, JsonRpcMethod method) {
         methods.put(name, method);
-        return this;
-    }
-
-    public JsonRpc executor(ExecutorService executorService) {
-        this.executorService = executorService;
         return this;
     }
 
@@ -57,38 +51,46 @@ public class JsonRpc {
 
     public JsonRpc bind() {
         shutdown = false;
-        executorService.submit(() -> {
-            while (!shutdown) {
-                try {
-                    JsonRpcMessage msg = messageHandler.receive();
-                    if (msg instanceof JsonRpcResponse) {
-                        JsonRpcResponse response = (JsonRpcResponse) msg;
-                        CompletableFuture<JsonRpcSuccess> responseFuture = openRequests.remove(response.getId());
-                        if (response instanceof JsonRpcError) {
-                            responseFuture.completeExceptionally(new JsonRpcException((JsonRpcError) response));
-                        } else if (response instanceof JsonRpcSuccess) {
-                            responseFuture.complete((JsonRpcSuccess) response);
-                        }
-                    } else if (msg instanceof JsonRpcRequest) {
-                        JsonRpcRequest request = (JsonRpcRequest) msg;
-                        JsonRpcMethod method = methods.get(request.getMethod());
-                        if (method == null) {
-                            messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()));
-                        } else {
-                            try {
-                                Object response = method.handle(request.getParams());
-                                if (response != null) {
-                                    messageHandler.send(new JsonRpcSuccess(request.getId(), response));
-                                } else {
-                                    messageHandler.send(JsonRpcError.internalError(request.getId(), "Method returned null"));
+        forkJoin.submit(new RecursiveAction() {
+            @Override
+            protected void compute() {
+                while (!shutdown) {
+                    try {
+                        JsonRpcMessage msg = messageHandler.receive();
+                        if (msg instanceof JsonRpcResponse) {
+                            JsonRpcResponse response = (JsonRpcResponse) msg;
+                            String id = response.getId();
+                            if (id != null) {
+                                CompletableFuture<JsonRpcSuccess> responseFuture = openRequests.remove(id);
+                                if (response instanceof JsonRpcError) {
+                                    responseFuture.completeExceptionally(new JsonRpcException((JsonRpcError) response));
+                                } else if (response instanceof JsonRpcSuccess) {
+                                    responseFuture.complete((JsonRpcSuccess) response);
                                 }
-                            } catch (Exception e) {
-                                messageHandler.send(JsonRpcError.internalError(request.getId(), e.getMessage()));
+                            }
+                        } else if (msg instanceof JsonRpcRequest) {
+                            JsonRpcRequest request = (JsonRpcRequest) msg;
+                            JsonRpcMethod method = methods.get(request.getMethod());
+                            if (method == null) {
+                                messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()));
+                            } else {
+                                ForkJoinTask.adapt(() -> {
+                                    try {
+                                        Object response = method.handle(request.getParams());
+                                        if (response != null) {
+                                            messageHandler.send(new JsonRpcSuccess(request.getId(), response));
+                                        } else {
+                                            messageHandler.send(JsonRpcError.internalError(request.getId(), "Method returned null"));
+                                        }
+                                    } catch (Exception e) {
+                                        messageHandler.send(JsonRpcError.internalError(request.getId(), e));
+                                    }
+                                }).fork();
                             }
                         }
+                    } catch (Throwable t) {
+                        t.printStackTrace();
                     }
-                } catch (Throwable t) {
-                    t.printStackTrace();
                 }
             }
         });

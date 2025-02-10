@@ -17,6 +17,10 @@ package io.moderne.jsonrpc;
 
 import lombok.EqualsAndHashCode;
 import lombok.Value;
+import org.jspecify.annotations.Nullable;
+
+import java.io.PrintWriter;
+import java.io.StringWriter;
 
 @Value
 @EqualsAndHashCode(callSuper = false)
@@ -28,25 +32,34 @@ public class JsonRpcError extends JsonRpcResponse {
     public static class Detail {
         int code;
         String message;
+
+        @Nullable
+        String data;
     }
 
     public static JsonRpcError parseError(String id) {
-        return new JsonRpcError(id, new Detail(-32700, "Parse error"));
+        return new JsonRpcError(id, new Detail(-32700, "Parse error", null));
     }
 
     public static JsonRpcError invalidRequest(String id, String message) {
-        return new JsonRpcError(id, new Detail(-32600, "Invalid Request: " + message));
+        return new JsonRpcError(id, new Detail(-32600, "Invalid Request: " + message, null));
     }
 
     public static JsonRpcError methodNotFound(String id, String method) {
-        return new JsonRpcError(id, new Detail(-32601, "Method not found: " + method));
+        return new JsonRpcError(id, new Detail(-32601, "Method not found: " + method, null));
     }
 
     public static JsonRpcError invalidParams(String id) {
-        return new JsonRpcError(id, new Detail(-32602, "Invalid params"));
+        return new JsonRpcError(id, new Detail(-32602, "Invalid params", null));
     }
 
     public static JsonRpcError internalError(String id, String message) {
-        return new JsonRpcError(id, new Detail(-32603, "Internal error: " + message));
+        return new JsonRpcError(id, new Detail(-32603, "Internal error: " + message, null));
+    }
+
+    public static JsonRpcError internalError(String id, Throwable t) {
+        StringWriter sw = new StringWriter();
+        t.printStackTrace(new PrintWriter(sw));
+        return new JsonRpcError(id, new Detail(-32603, "Internal error: " + t.getMessage(), sw.toString()));
     }
 }

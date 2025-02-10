@@ -10,7 +10,7 @@ import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
-import java.util.function.Function;
+import java.util.function.BiFunction;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
@@ -59,7 +59,7 @@ public class TreeDataReceiveQueue {
             case DELETE:
                 return null;
             case ADD:
-                before = newTree(message.getValue());
+                before = newTree(message.getValueType(), UUID.fromString(message.getValue()));
                 // intentional fall-through...
             case CHANGE:
                 //noinspection unchecked
@@ -74,13 +74,13 @@ public class TreeDataReceiveQueue {
         //noinspection unchecked
         return listDifferences(
                 before,
-                v -> newTree((TreeDatum.Add) v),
+                (type, v) -> newTree(type, (UUID) v),
                 v -> (T) visitor.visitNonNull(v, this)
         );
     }
 
     public <T> List<T> listDifferences(@Nullable List<T> before,
-                                       Function<Object, T> onAdd,
+                                       BiFunction<String, Object, T> onAdd,
                                        UnaryOperator<T> onChange) {
         TreeDatum msg = take();
         switch (msg.getState()) {
@@ -100,7 +100,7 @@ public class TreeDataReceiveQueue {
                             after.add(requireNonNull(before).get(beforeIdx));
                             break;
                         case ADD:
-                            after.add(onChange.apply(onAdd.apply(msg.getValue())));
+                            after.add(onChange.apply(onAdd.apply(requireNonNull(msg.getValueType()), msg.getValue())));
                             break;
                         case CHANGE:
                             after.add(onChange.apply(requireNonNull(before).get(beforeIdx)));
@@ -115,19 +115,36 @@ public class TreeDataReceiveQueue {
         }
     }
 
-    private <T extends Tree> T newTree(TreeDatum.Add add) {
-        UUID id = add.getId();
+    private static <T extends Tree> T newTree(String treeType, UUID id) {
         try {
-            Class<?> clazz = Class.forName(add.getClassName());
+            Class<?> clazz = Class.forName(treeType);
             for (Constructor<?> ctor : clazz.getDeclaredConstructors()) {
                 for (Parameter param : ctor.getParameters()) {
                     if (param.getType().equals(UUID.class)) {
                         Object[] args = new Object[ctor.getParameterCount()];
                         for (int i = 0; i < args.length; i++) {
-                            if (ctor.getParameters()[i].getType().equals(UUID.class)) {
+                            Class<?> paramType = ctor.getParameters()[i].getType();
+                            if (paramType.equals(UUID.class)) {
                                 args[i] = id;
+                            } else if (paramType == boolean.class) {
+                                args[i] = false;
+                            } else if (paramType == int.class) {
+                                args[i] = 0;
+                            } else if (paramType == short.class) {
+                                args[i] = (short) 0;
+                            } else if (paramType == long.class) {
+                                args[i] = 0L;
+                            } else if (paramType == byte.class) {
+                                args[i] = (byte) 0;
+                            } else if (paramType == float.class) {
+                                args[i] = 0.0f;
+                            } else if (paramType == double.class) {
+                                args[i] = 0.0d;
+                            } else if (paramType == char.class) {
+                                args[i] = '\u0000';
                             }
                         }
+                        ctor.setAccessible(true);
                         //noinspection unchecked
                         return (T) ctor.newInstance(args);
                     }

@@ -2,7 +2,7 @@ package org.openrewrite.json.rpc;
 
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.Tree;
-import org.openrewrite.json.JsonIsoVisitor;
+import org.openrewrite.json.JsonVisitor;
 import org.openrewrite.json.tree.Json;
 import org.openrewrite.json.tree.Json.JsonObject;
 import org.openrewrite.json.tree.JsonKey;
@@ -11,16 +11,15 @@ import org.openrewrite.rpc.TreeDataSendQueue;
 import org.openrewrite.rpc.TreeDatum;
 
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.openrewrite.rpc.TreeDataSendQueue.listDifferences;
 
-public class JsonSender extends JsonIsoVisitor<TreeDataSendQueue> {
+public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
 
     @Override
-    public Json.Document visitDocument(Json.Document after, TreeDataSendQueue q) {
-        q.tree(after, before -> {
-            q.value(after.getPrefix(), Json::getPrefix);
-            q.value(after.getMarkers(), Tree::getMarkers);
+    public Json visitDocument(Json.Document after, TreeDataSendQueue q) {
+        json(after, q, before -> {
             q.visit(this, after.getValue(), Json.Document::getValue);
             q.value(after.getEof(), Json.Document::getEof);
         });
@@ -28,45 +27,31 @@ public class JsonSender extends JsonIsoVisitor<TreeDataSendQueue> {
         return after;
     }
 
-    public Json.Array visitArray(Json.Array after, TreeDataSendQueue q) {
-        return q.tree(after, before -> {
-            q.value(after.getPrefix(), Json::getPrefix);
-            q.value(after.getMarkers(), Tree::getMarkers);
-            visitRightPadded(after.getPadding().getValues(),
-                    before == null ? null : before.getPadding().getValues(), q);
-        });
+    public Json visitArray(Json.Array after, TreeDataSendQueue q) {
+        return json(after, q, before -> visitRightPadded(
+                after.getPadding().getValues(),
+                before == null ? null : before.getPadding().getValues(), q));
     }
 
-    public Json.Empty visitEmpty(Json.Empty after, TreeDataSendQueue q) {
-        return q.tree(after, before -> {
-            q.value(after.getPrefix(), Json::getPrefix);
-            q.value(after.getMarkers(), Tree::getMarkers);
+    public Json visitEmpty(Json.Empty after, TreeDataSendQueue q) {
+        return json(after, q, before -> {
         });
     }
 
     @Override
-    public Json.Identifier visitIdentifier(Json.Identifier after, TreeDataSendQueue q) {
-        return q.tree(after, before -> {
-            q.value(after.getPrefix(), Json::getPrefix);
-            q.value(after.getMarkers(), Tree::getMarkers);
-            q.value(after.getName(), Json.Identifier::getName);
-        });
+    public Json visitIdentifier(Json.Identifier after, TreeDataSendQueue q) {
+        return json(after, q, before ->
+                q.value(after.getName(), Json.Identifier::getName));
     }
 
     @Override
-    public Json.Literal visitLiteral(Json.Literal after, TreeDataSendQueue q) {
-        return q.tree(after, before -> {
-            q.value(after.getPrefix(), Json::getPrefix);
-            q.value(after.getMarkers(), Tree::getMarkers);
-            q.value(after.getValue(), Json.Literal::getValue);
-        });
+    public Json visitLiteral(Json.Literal after, TreeDataSendQueue q) {
+        return json(after, q, before ->
+                q.value(after.getValue(), Json.Literal::getValue));
     }
 
-    public Json.Member visitMember(Json.Member after, TreeDataSendQueue q) {
-        return q.tree(after, before -> {
-            q.value(after.getPrefix(), Json::getPrefix);
-            q.value(after.getMarkers(), Tree::getMarkers);
-
+    public Json visitMember(Json.Member after, TreeDataSendQueue q) {
+        return json(after, q, before -> {
             JsonRightPadded<JsonKey> beforeKey = before == null ? null : before.getPadding().getKey();
             q.value(after.getPadding().getKey(), beforeKey, () ->
                     onRightPaddedChange(after.getPadding().getKey(), beforeKey, q));
@@ -76,12 +61,18 @@ public class JsonSender extends JsonIsoVisitor<TreeDataSendQueue> {
         });
     }
 
-    public JsonObject visitObject(JsonObject after, TreeDataSendQueue q) {
+    public Json visitObject(JsonObject after, TreeDataSendQueue q) {
+        return json(after, q, before -> {
+            visitRightPadded(after.getPadding().getMembers(),
+                    before == null ? null : before.getPadding().getMembers(), q);
+        });
+    }
+
+    private <T extends Json> Json json(T after, TreeDataSendQueue q, Consumer<@Nullable T> onChange) {
         return q.tree(after, before -> {
             q.value(after.getPrefix(), Json::getPrefix);
             q.value(after.getMarkers(), Tree::getMarkers);
-            visitRightPadded(after.getPadding().getMembers(),
-                    before == null ? null : before.getPadding().getMembers(), q);
+            onChange.accept(before);
         });
     }
 
@@ -92,6 +83,7 @@ public class JsonSender extends JsonIsoVisitor<TreeDataSendQueue> {
                 after,
                 before,
                 p -> p.getElement().getId(),
+                t -> null,
                 t -> null,
                 (anAfter, aBefore) -> {
                     onRightPaddedChange(aBefore, anAfter, q);

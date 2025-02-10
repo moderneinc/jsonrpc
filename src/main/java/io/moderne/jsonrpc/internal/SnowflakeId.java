@@ -2,7 +2,7 @@ package io.moderne.jsonrpc.internal;
 
 import java.util.concurrent.atomic.AtomicLong;
 
-public class ShortId {
+public class SnowflakeId {
     private static final long EPOCH = 1640995200000L; // Custom epoch
     private static final long MACHINE_ID = 1L; // Unique machine ID (0-1023)
 
@@ -16,8 +16,11 @@ public class ShortId {
     private static final AtomicLong lastTimestamp = new AtomicLong(-1L);
     private static final AtomicLong sequence = new AtomicLong(0L);
 
+    private SnowflakeId() {
+    }
+
     /**
-     * @return A short, unique ID produced in a similar way as Twitter's Snowflake
+     * @return A short, unique ID produced in a similar way as Twitter's Snowflake ID
      */
     public static synchronized String generateId() {
         long currentTimestamp = System.currentTimeMillis() - EPOCH;

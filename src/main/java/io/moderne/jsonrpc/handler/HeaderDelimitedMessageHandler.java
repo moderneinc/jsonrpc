@@ -69,10 +69,18 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             }
 
             byte[] content = new byte[Integer.parseInt(contentLengthMatcher.group(1))];
-            ByteArrayInputStream bis = new ByteArrayInputStream(content);
-            if (inputStream.read(content) != content.length) {
-                return JsonRpcError.invalidRequest(null, "Content length mismatch");
+            for (int totalRead = 0; totalRead < content.length; ) {
+                int bytesRead = inputStream.read(content, totalRead, content.length - totalRead);
+                if (bytesRead == -1) {
+                    // Stream ended unexpectedly before reading full content
+                    return JsonRpcError.invalidRequest(null,
+                            "Content length mismatch. Expected " + content.length +
+                            " but received " + totalRead);
+                }
+                totalRead += bytesRead;
             }
+
+            ByteArrayInputStream bis = new ByteArrayInputStream(content);
             return formatter.deserialize(bis);
         } catch (IOException e) {
             return JsonRpcError.invalidRequest(null, e.getMessage());

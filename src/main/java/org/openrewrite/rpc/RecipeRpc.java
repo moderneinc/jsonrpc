@@ -1,6 +1,5 @@
 package org.openrewrite.rpc;
 
-import com.fasterxml.jackson.core.type.TypeReference;
 import io.moderne.jsonrpc.JsonRpc;
 import io.moderne.jsonrpc.JsonRpcRequest;
 import org.openrewrite.SourceFile;
@@ -9,6 +8,7 @@ import org.openrewrite.TreeVisitor;
 import org.openrewrite.rpc.request.GetTreeDataRequest;
 import org.openrewrite.rpc.request.RecipeRpcRequest;
 import org.openrewrite.rpc.request.VisitRequest;
+import org.openrewrite.rpc.request.VisitResponse;
 
 import java.lang.reflect.Constructor;
 import java.time.Duration;
@@ -48,10 +48,10 @@ public class RecipeRpc {
                 } else {
                     localTrees.put(after.getId(), after);
                 }
+                return new VisitResponse(before != after);
             } finally {
                 inProgressGetTreeDatas.remove(request.getTreeId());
             }
-            return 0;
         }));
 
         jsonRpc.method("getTree", typed(GetTreeDataRequest.class, request -> {
@@ -65,6 +65,7 @@ public class RecipeRpc {
                         Language.fromSourceFile(after).getSender().visit(after, sendQueue);
                         remoteTrees.put(id, after);
                     } catch (Throwable t) {
+                        // TODO what to do here?
                         t.printStackTrace();
                     }
                     return 0;
@@ -73,11 +74,6 @@ public class RecipeRpc {
             });
             return q.take();
         }));
-    }
-
-    public RecipeRpc executor(ExecutorService executorService) {
-        jsonRpc.executor(executorService);
-        return this;
     }
 
     public RecipeRpc bind() {
@@ -90,23 +86,26 @@ public class RecipeRpc {
     }
 
     public <P> Tree visit(SourceFile sourceFile, String visitorName, P p) {
-        scan(sourceFile, visitorName, p);
-        return getTree(sourceFile.getId(), Language.fromSourceFile(sourceFile));
+        VisitResponse response = scan(sourceFile, visitorName, p);
+        return response.isModified() ?
+                getTree(sourceFile.getId(), Language.fromSourceFile(sourceFile)) :
+                sourceFile;
     }
 
-    public <P> void scan(SourceFile sourceFile, String visitorName, P p) {
+    public <P> VisitResponse scan(SourceFile sourceFile, String visitorName, P p) {
         localTrees.put(sourceFile.getId(), sourceFile);
         Language language = Language.fromSourceFile(sourceFile);
-        send("visit", new VisitRequest(visitorName, sourceFile.getId(), language, p));
+        return send("visit", new VisitRequest(visitorName, sourceFile.getId(), language, p),
+                VisitResponse.class);
     }
 
     private SourceFile getTree(UUID treeId, Language language) {
         TreeDataReceiveQueue q = new TreeDataReceiveQueue(() -> send("getTree",
-                new GetTreeDataRequest(treeId)));
+                new GetTreeDataRequest(treeId), TreeData.class));
         return q.tree(language.getReceiver(), localTrees.get(treeId));
     }
 
-    private <P> P send(String method, RecipeRpcRequest body) {
+    private <P> P send(String method, RecipeRpcRequest body, Class<P> responseType) {
         try {
             // TODO handle error
             return jsonRpc
@@ -114,8 +113,7 @@ public class RecipeRpc {
                             .namedParameters(body)
                             .build())
                     .get(timeout.getSeconds(), TimeUnit.SECONDS)
-                    .getResult(new TypeReference<P>() {
-                    });
+                    .getResult(responseType);
         } catch (ExecutionException | TimeoutException | InterruptedException e) {
             throw new RuntimeException(e);
         }
