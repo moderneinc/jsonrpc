@@ -18,16 +18,17 @@ import static java.util.Objects.requireNonNull;
 
 public class TreeDataReceiveQueue {
     private final List<TreeDatum> batch;
-    private final Supplier<List<TreeDatum>> pull;
+    private final Supplier<TreeData> pull;
 
-    public TreeDataReceiveQueue(Supplier<List<TreeDatum>> pull) {
+    public TreeDataReceiveQueue(Supplier<TreeData> pull) {
         this.batch = new ArrayList<>();
         this.pull = pull;
     }
 
     public TreeDatum take() {
         if (batch.isEmpty()) {
-            batch.addAll(pull.get());
+            TreeData data = pull.get();
+            batch.addAll(data.getData());
         }
         return batch.remove(0);
     }

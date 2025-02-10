@@ -19,10 +19,10 @@ public class TreeDataSendQueue {
     private Tree before;
 
     private final int batchSize;
-    private final List<TreeDatum> batch;
-    private final Consumer<List<TreeDatum>> drain;
+    private List<TreeDatum> batch;
+    private final Consumer<TreeData> drain;
 
-    public TreeDataSendQueue(int batchSize, @Nullable Tree before, ThrowingConsumer<List<TreeDatum>> drain) {
+    public TreeDataSendQueue(int batchSize, @Nullable Tree before, ThrowingConsumer<TreeData> drain) {
         this.batchSize = batchSize;
         this.batch = new ArrayList<>(batchSize);
         this.before = before;
@@ -40,8 +40,8 @@ public class TreeDataSendQueue {
         if (batch.isEmpty()) {
             return;
         }
-        drain.accept(batch);
-        batch.clear();
+        drain.accept(new TreeData(batch));
+        batch = new ArrayList<>();
     }
 
     public <Parent, T> void value(@Nullable T after, Function<Parent, @Nullable T> beforeFn) {
@@ -63,7 +63,7 @@ public class TreeDataSendQueue {
         if (before == after) {
             put(new TreeDatum(TreeDatum.State.NO_CHANGE, null));
         } else if (before == null) {
-            put(new TreeDatum(TreeDatum.State.ADD, after.getId()));
+            put(new TreeDatum(TreeDatum.State.ADD, new TreeDatum.Add(after.getId(), after.getClass().getName())));
             //noinspection unchecked
             onChange.accept((T) before);
         } else if (after == null) {

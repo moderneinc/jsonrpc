@@ -9,12 +9,10 @@ import org.openrewrite.TreeVisitor;
 import org.openrewrite.rpc.request.GetTreeDataRequest;
 import org.openrewrite.rpc.request.RecipeRpcRequest;
 import org.openrewrite.rpc.request.VisitRequest;
-import org.openrewrite.rpc.response.RecipeRpcResponse;
 
 import java.lang.reflect.Constructor;
 import java.time.Duration;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -26,10 +24,11 @@ public class RecipeRpc {
     private final JsonRpc jsonRpc;
     private final Duration timeout;
 
+    private final Map<UUID, SourceFile> remoteTrees = new HashMap<>();
     private final Map<UUID, SourceFile> localTrees = new HashMap<>();
 
     // TODO This should be keyed on both the visit (transaction) ID in addition to the tree ID
-    private final Map<UUID, BlockingQueue<List<TreeDatum>>> inProgressGetTreeDatas = new HashMap<>();
+    private final Map<UUID, BlockingQueue<TreeData>> inProgressGetTreeDatas = new HashMap<>();
 
     public RecipeRpc(JsonRpc jsonRpc, Duration timeout) {
         this.jsonRpc = jsonRpc;
@@ -52,23 +51,27 @@ public class RecipeRpc {
             } finally {
                 inProgressGetTreeDatas.remove(request.getTreeId());
             }
-
-            return RecipeRpcResponse.ok();
+            return 0;
         }));
 
         jsonRpc.method("getTree", typed(GetTreeDataRequest.class, request -> {
-            BlockingQueue<List<TreeDatum>> q = inProgressGetTreeDatas.computeIfAbsent(request.getTreeId(), id -> {
-                BlockingQueue<List<TreeDatum>> batch = new ArrayBlockingQueue<>(1);
-                SourceFile before = localTrees.get(id);
+            BlockingQueue<TreeData> q = inProgressGetTreeDatas.computeIfAbsent(request.getTreeId(), id -> {
+                BlockingQueue<TreeData> batch = new ArrayBlockingQueue<>(1);
+                SourceFile before = remoteTrees.get(id);
                 TreeDataSendQueue sendQueue = new TreeDataSendQueue(10, before, batch::put);
                 executorService.submit(() -> {
-                    Language.fromSourceFile(before).getSender().visit(before, sendQueue);
+                    try {
+                        SourceFile after = localTrees.get(id);
+                        Language.fromSourceFile(after).getSender().visit(after, sendQueue);
+                        remoteTrees.put(id, after);
+                    } catch (Throwable t) {
+                        t.printStackTrace();
+                    }
                     return 0;
                 });
                 return batch;
             });
-            TreeData body = new TreeData(q.take());
-            return RecipeRpcResponse.ok(body);
+            return q.take();
         }));
     }
 
@@ -104,22 +107,17 @@ public class RecipeRpc {
     }
 
     private <P> P send(String method, RecipeRpcRequest body) {
-        RecipeRpcResponse<P> response;
         try {
-            response = jsonRpc.send(JsonRpcRequest.newRequest(method)
+            // TODO handle error
+            return jsonRpc
+                    .send(JsonRpcRequest.newRequest(method)
                             .namedParameters(body)
                             .build())
                     .get(timeout.getSeconds(), TimeUnit.SECONDS)
-                    .getResult(new TypeReference<RecipeRpcResponse<P>>() {
+                    .getResult(new TypeReference<P>() {
                     });
         } catch (ExecutionException | TimeoutException | InterruptedException e) {
             throw new RuntimeException(e);
         }
-
-        if (!response.isSuccessful()) {
-            throw new RecipeRpcException(response.getError());
-        }
-
-        return response.getBody();
     }
 }

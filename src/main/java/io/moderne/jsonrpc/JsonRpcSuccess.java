@@ -25,6 +25,7 @@ import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
+import org.jspecify.annotations.Nullable;
 
 @Value
 @EqualsAndHashCode(callSuper = false)
@@ -39,6 +40,8 @@ public class JsonRpcSuccess extends JsonRpcResponse {
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     String id;
+
+    @Nullable
     Object result;
 
     public <V> V getResult(Class<V> resultType) {

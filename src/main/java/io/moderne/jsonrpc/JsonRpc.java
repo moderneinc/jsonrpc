@@ -59,30 +59,36 @@ public class JsonRpc {
         shutdown = false;
         executorService.submit(() -> {
             while (!shutdown) {
-                JsonRpcMessage msg = messageHandler.receive();
-                if (msg instanceof JsonRpcResponse) {
-                    JsonRpcResponse response = (JsonRpcResponse) msg;
-                    CompletableFuture<JsonRpcSuccess> responseFuture = openRequests.remove(response.getId());
-                    if (response instanceof JsonRpcError) {
-                        responseFuture.completeExceptionally(new JsonRpcException((JsonRpcError) response));
-                    } else if (response instanceof JsonRpcSuccess) {
-                        responseFuture.complete((JsonRpcSuccess) response);
-                    }
-                } else if (msg instanceof JsonRpcRequest) {
-                    JsonRpcRequest request = (JsonRpcRequest) msg;
-                    JsonRpcMethod method = methods.get(request.getMethod());
-                    if (method == null) {
-                        messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()));
-                    } else {
-                        try {
-                            Object response = method.handle(request.getParams());
-                            if (response != null) {
-                                messageHandler.send(new JsonRpcSuccess(request.getId(), response));
+                try {
+                    JsonRpcMessage msg = messageHandler.receive();
+                    if (msg instanceof JsonRpcResponse) {
+                        JsonRpcResponse response = (JsonRpcResponse) msg;
+                        CompletableFuture<JsonRpcSuccess> responseFuture = openRequests.remove(response.getId());
+                        if (response instanceof JsonRpcError) {
+                            responseFuture.completeExceptionally(new JsonRpcException((JsonRpcError) response));
+                        } else if (response instanceof JsonRpcSuccess) {
+                            responseFuture.complete((JsonRpcSuccess) response);
+                        }
+                    } else if (msg instanceof JsonRpcRequest) {
+                        JsonRpcRequest request = (JsonRpcRequest) msg;
+                        JsonRpcMethod method = methods.get(request.getMethod());
+                        if (method == null) {
+                            messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()));
+                        } else {
+                            try {
+                                Object response = method.handle(request.getParams());
+                                if (response != null) {
+                                    messageHandler.send(new JsonRpcSuccess(request.getId(), response));
+                                } else {
+                                    messageHandler.send(JsonRpcError.internalError(request.getId(), "Method returned null"));
+                                }
+                            } catch (Exception e) {
+                                messageHandler.send(JsonRpcError.internalError(request.getId(), e.getMessage()));
                             }
-                        } catch (Exception e) {
-                            messageHandler.send(JsonRpcError.internalError(request.getId(), e.getMessage()));
                         }
                     }
+                } catch (Throwable t) {
+                    t.printStackTrace();
                 }
             }
         });

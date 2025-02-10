@@ -45,6 +45,8 @@ public class TraceMessageHandler implements MessageHandler {
     public void send(JsonRpcMessage message) {
         if (message instanceof JsonRpcRequest) {
             out.printf("-(%s)-> %s%n", name, message);
+        } else if (message instanceof JsonRpcResponse) {
+            out.printf("<-(%s)- %s%n", name, message);
         }
         delegate.send(message);
     }

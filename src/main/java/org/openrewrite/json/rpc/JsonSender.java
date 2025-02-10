@@ -8,6 +8,7 @@ import org.openrewrite.json.tree.Json.JsonObject;
 import org.openrewrite.json.tree.JsonKey;
 import org.openrewrite.json.tree.JsonRightPadded;
 import org.openrewrite.rpc.TreeDataSendQueue;
+import org.openrewrite.rpc.TreeDatum;
 
 import java.util.List;
 
@@ -87,7 +88,7 @@ public class JsonSender extends JsonIsoVisitor<TreeDataSendQueue> {
     private <T extends Json> void visitRightPadded(@Nullable List<JsonRightPadded<T>> after,
                                                    @Nullable List<JsonRightPadded<T>> before,
                                                    TreeDataSendQueue q) {
-        listDifferences(
+        List<TreeDatum> diff = listDifferences(
                 after,
                 before,
                 p -> p.getElement().getId(),
@@ -97,6 +98,9 @@ public class JsonSender extends JsonIsoVisitor<TreeDataSendQueue> {
                     return anAfter;
                 }
         );
+        for (TreeDatum datum : diff) {
+            q.put(datum);
+        }
     }
 
     private <T extends Json> void onRightPaddedChange(@Nullable JsonRightPadded<T> aBefore,

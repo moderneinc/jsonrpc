@@ -17,6 +17,7 @@ package io.moderne.jsonrpc;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.moderne.jsonrpc.internal.ShortId;
 import lombok.EqualsAndHashCode;
 import lombok.RequiredArgsConstructor;
 import lombok.Value;
@@ -43,7 +44,7 @@ public class JsonRpcRequest extends JsonRpcMessage {
     @RequiredArgsConstructor
     public static class Builder {
         private final String method;
-        private String id = UUID.randomUUID().toString();
+        private String id = ShortId.generateId();
 
         private final Map<String, Object> namedParameters = new LinkedHashMap<>();
         private List<Object> positionalParameters;
