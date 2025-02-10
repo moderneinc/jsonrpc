@@ -26,6 +26,7 @@ import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import java.util.List;
 import java.util.Map;
 
+@SuppressWarnings("unused")
 public interface JsonRpcMethod {
     Object handle(Object params) throws Exception;
 

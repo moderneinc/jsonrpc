@@ -55,7 +55,7 @@ public class JsonRpc {
         messageHandler.send(request);
     }
 
-    public JsonRpc start() {
+    public JsonRpc bind() {
         shutdown = false;
         executorService.submit(() -> {
             while (!shutdown) {

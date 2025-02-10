@@ -24,18 +24,19 @@ import java.io.PrintStream;
 
 @RequiredArgsConstructor
 public class TraceMessageHandler implements MessageHandler {
+    private final String name;
     private final MessageHandler delegate;
     private final PrintStream out;
 
-    public TraceMessageHandler(MessageHandler delegate) {
-        this(delegate, System.out);
+    public TraceMessageHandler(String name, MessageHandler delegate) {
+        this(name, delegate, System.out);
     }
 
     @Override
     public JsonRpcMessage receive() {
         JsonRpcMessage message = delegate.receive();
         if (message instanceof JsonRpcResponse) {
-            out.println("<-- " + message);
+            out.printf("<-(%s)- %s%n", name, message);
         }
         return message;
     }
@@ -43,7 +44,7 @@ public class TraceMessageHandler implements MessageHandler {
     @Override
     public void send(JsonRpcMessage message) {
         if (message instanceof JsonRpcRequest) {
-            out.println("--> " + message);
+            out.printf("-(%s)-> %s%n", name, message);
         }
         delegate.send(message);
     }

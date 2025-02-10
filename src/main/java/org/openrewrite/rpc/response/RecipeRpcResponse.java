@@ -23,6 +23,10 @@ public class RecipeRpcResponse<P> {
     }
 
     public static RecipeRpcResponse<Integer> ok() {
-        return new RecipeRpcResponse<>(0, null);
+        return ok(0);
+    }
+
+    public static <P> RecipeRpcResponse<P> ok(P body) {
+        return new RecipeRpcResponse<>(body, null);
     }
 }

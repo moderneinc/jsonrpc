@@ -42,7 +42,7 @@ public class JsonRpcTest {
     void before() throws IOException {
         PipedOutputStream os = new PipedOutputStream();
         PipedInputStream is = new PipedInputStream(os);
-        jsonRpc = new JsonRpc(new TraceMessageHandler(new HeaderDelimitedMessageHandler(is, os)));
+        jsonRpc = new JsonRpc(new TraceMessageHandler("both", new HeaderDelimitedMessageHandler(is, os)));
     }
 
     @AfterEach
@@ -54,7 +54,7 @@ public class JsonRpcTest {
     void requestResponse() throws ExecutionException, InterruptedException, TimeoutException {
         JsonRpcSuccess response = jsonRpc
                 .method("hello", JsonRpcMethod.named("name", (String name) -> "Hello " + name))
-                .start()
+                .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
                         .namedParameter("name", "Jon")
@@ -70,7 +70,7 @@ public class JsonRpcTest {
                 .method("hello", JsonRpcMethod.named("name", (String name) -> {
                     throw new IllegalStateException("Boom");
                 }))
-                .start()
+                .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
                         .namedParameter("name", "Jon")
@@ -88,7 +88,7 @@ public class JsonRpcTest {
                     latch.countDown();
                     return null;
                 }))
-                .start()
+                .bind()
                 .notification(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
                         .namedParameter("name", "Jon")
@@ -100,7 +100,7 @@ public class JsonRpcTest {
     void positional() throws ExecutionException, InterruptedException, TimeoutException {
         JsonRpcSuccess response = jsonRpc
                 .method("hello", JsonRpcMethod.positional((List<String> names) -> "Hello " + String.join(" and ", names)))
-                .start()
+                .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
                         .positionalParameters("Jon", "Jim")
@@ -114,7 +114,7 @@ public class JsonRpcTest {
     void positionalRequestNamedParamHandler() {
         assertThatThrownBy(() -> jsonRpc
                 .method("hello", JsonRpcMethod.named("name", (String name) -> "Hello " + name))
-                .start()
+                .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
                         .positionalParameters("Jon")

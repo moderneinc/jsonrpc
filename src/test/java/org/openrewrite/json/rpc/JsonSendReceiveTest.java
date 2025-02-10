@@ -9,12 +9,12 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.ExecutionContext;
+import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.json.JsonVisitor;
 import org.openrewrite.json.tree.Json;
-import org.openrewrite.rpc.RecipeRpcClient;
-import org.openrewrite.rpc.RecipeRpcServer;
+import org.openrewrite.rpc.RecipeRpc;
 import org.openrewrite.test.RecipeSpec;
 import org.openrewrite.test.RewriteTest;
 
@@ -27,23 +27,27 @@ import static org.openrewrite.json.Assertions.json;
 import static org.openrewrite.test.RewriteTest.toRecipe;
 
 public class JsonSendReceiveTest implements RewriteTest {
-
-    JsonRpc jsonRpc;
-    RecipeRpcServer server;
-    RecipeRpcClient client;
+    RecipeRpc server;
+    RecipeRpc client;
 
     @BeforeEach
     void before() throws IOException {
-        PipedOutputStream os = new PipedOutputStream();
-        PipedInputStream is = new PipedInputStream(os);
-        jsonRpc = new JsonRpc(new TraceMessageHandler(new HeaderDelimitedMessageHandler(is, os)));
-        server = new RecipeRpcServer(jsonRpc, Duration.ofSeconds(10));
-        client = new RecipeRpcClient(jsonRpc).start();
+        PipedOutputStream serverOut = new PipedOutputStream();
+        PipedOutputStream clientOut = new PipedOutputStream();
+        PipedInputStream serverIn = new PipedInputStream(clientOut);
+        PipedInputStream clientIn = new PipedInputStream(serverOut);
+
+        JsonRpc serverJsonRpc = new JsonRpc(new TraceMessageHandler("server", new HeaderDelimitedMessageHandler(serverIn, serverOut)));
+        server = new RecipeRpc(serverJsonRpc, Duration.ofSeconds(10)).bind();
+
+        JsonRpc clientJsonRpc = new JsonRpc(new TraceMessageHandler("client", new HeaderDelimitedMessageHandler(clientIn, clientOut)));
+        client = new RecipeRpc(clientJsonRpc, Duration.ofSeconds(10)).bind();
     }
 
     @AfterEach
     void after() {
-        jsonRpc.shutdown();
+        server.shutdown();
+        client.shutdown();
     }
 
     @Override
@@ -52,7 +56,7 @@ public class JsonSendReceiveTest implements RewriteTest {
             @SneakyThrows
             @Override
             public Tree preVisit(@NonNull Tree tree, ExecutionContext ctx) {
-                return server.visit(getCursor(), ChangeValue.class.getName(), 0);
+                return server.visit((SourceFile) tree, ChangeValue.class.getName(), 0);
             }
         }));
     }

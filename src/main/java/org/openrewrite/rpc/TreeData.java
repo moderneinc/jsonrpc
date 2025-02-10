@@ -7,5 +7,4 @@ import java.util.List;
 @Value
 public class TreeData {
     List<TreeDatum> data;
-    boolean endOfData;
 }

@@ -10,7 +10,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-public class TreeSenderTest {
+public class TreeDataSendQueueTest {
 
     @Test
     void listDifference() {
@@ -20,8 +20,8 @@ public class TreeSenderTest {
           .distinct()
           .collect(Collectors.toMap(s -> s, s -> UUID.randomUUID()));
 
-        List<TreeDatum> diff = TreeSender.listDifferences(after, before, ids::get,
-          ids::get, s -> null);
+        List<TreeDatum> diff = TreeDataSendQueue.listDifferences(after, before, ids::get,
+          ids::get, (anAfter, aBefore) -> null);
 
         assertThat(diff).containsExactly(
           new TreeDatum(TreeDatum.State.CHANGE, List.of(0, -1, -1, 2)),

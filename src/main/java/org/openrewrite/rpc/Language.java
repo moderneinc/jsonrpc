@@ -1,9 +1,9 @@
 package org.openrewrite.rpc;
 
-import org.jspecify.annotations.Nullable;
 import org.openrewrite.Cursor;
 import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
+import org.openrewrite.TreeVisitor;
 import org.openrewrite.json.rpc.JsonReceiver;
 import org.openrewrite.json.rpc.JsonSender;
 import org.openrewrite.json.tree.Json;
@@ -16,16 +16,20 @@ public enum Language {
 
     public static Language fromCursor(Cursor cursor) {
         SourceFile sourceFile = cursor.firstEnclosingOrThrow(SourceFile.class);
+        return fromSourceFile(sourceFile);
+    }
+
+    public static Language fromSourceFile(SourceFile sourceFile) {
         if (sourceFile instanceof Json) {
             return Json;
         }
         throw new UnsupportedOperationException("Unsupported language " + sourceFile.getClass().getSimpleName());
     }
 
-    public TreeReceiver getReceiver(@Nullable Tree localState) {
+    public TreeVisitor<? extends Tree, TreeDataReceiveQueue> getReceiver() {
         switch (this) {
             case Json:
-                return new TreeReceiver(new JsonReceiver(), localState);
+                return new JsonReceiver();
             case Properties:
             case Xml:
             case Yaml:
@@ -34,10 +38,10 @@ public enum Language {
         }
     }
 
-    public TreeSender getSender(@Nullable Tree remoteState, @Nullable Tree current) {
+    public TreeVisitor<? extends Tree, TreeDataSendQueue> getSender() {
         switch (this) {
             case Json:
-                return new TreeSender(new JsonSender(), remoteState, current);
+                return new JsonSender();
             case Properties:
             case Xml:
             case Yaml:
