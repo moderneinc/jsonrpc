@@ -47,6 +47,8 @@ public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
         Json.Literal l = before;
         l = l.withPrefix(q.value(l.getPrefix()));
         l = l.withMarkers(q.value(l.getMarkers()));
+        l = l.withSource(q.value(l.getSource()));
+        l = l.withValue(q.value(l.getValue()));
         return l;
     }
 
@@ -104,11 +106,11 @@ public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
     }
 
     private <T extends Json> JsonRightPadded<T> onRightPaddedChanged(JsonRightPadded<T> before,
-                                                                     TreeDataReceiveQueue TreeDataReceiveQueue) {
+                                                                     TreeDataReceiveQueue q) {
         JsonRightPadded<T> r = before;
-        r = r.withElement(TreeDataReceiveQueue.tree(this, r.getElement()));
-        r = r.withAfter(TreeDataReceiveQueue.value(r.getAfter()));
-        r = r.withMarkers(TreeDataReceiveQueue.value(r.getMarkers()));
+        r = r.withElement(q.tree(this, r.getElement()));
+        r = r.withAfter(q.value(r.getAfter()));
+        r = r.withMarkers(q.value(r.getMarkers()));
         return r;
     }
 }

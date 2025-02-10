@@ -14,12 +14,11 @@ import static java.util.stream.Collectors.toList;
 import static org.openrewrite.rpc.TreeDatum.ADDED_LIST_ITEM;
 
 public class TreeDataSendQueue {
-
     @Nullable
     private Tree before;
 
     private final int batchSize;
-    private List<TreeDatum> batch;
+    private final List<TreeDatum> batch;
     private final Consumer<TreeData> drain;
 
     public TreeDataSendQueue(int batchSize, @Nullable Tree before, ThrowingConsumer<TreeData> drain) {
@@ -36,12 +35,15 @@ public class TreeDataSendQueue {
         }
     }
 
+    /**
+     * Called whenever the batch size is reached or at the end of the tree.
+     */
     public void flush() {
         if (batch.isEmpty()) {
             return;
         }
-        drain.accept(new TreeData(batch));
-        batch = new ArrayList<>();
+        drain.accept(new TreeData(new ArrayList<>(batch)));
+        batch.clear();
     }
 
     public <Parent, T> void value(@Nullable T after, Function<Parent, @Nullable T> beforeFn) {
@@ -81,7 +83,8 @@ public class TreeDataSendQueue {
         if (before == after) {
             put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
         } else if (before == null) {
-            put(new TreeDatum(TreeDatum.State.ADD, null, null));
+            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), null));
+            onChange.run();
         } else if (after == null) {
             put(new TreeDatum(TreeDatum.State.DELETE, null, null));
         } else {
@@ -113,26 +116,25 @@ public class TreeDataSendQueue {
 //        for (TreeDatum datum : diff) {
 //            put(datum);
 //        }
+        throw new UnsupportedOperationException("Implement me!");
     }
 
-    public static <T> List<TreeDatum> listDifferences(@Nullable List<T> after,
-                                                      @Nullable List<T> before,
-                                                      Function<T, UUID> elementId,
-                                                      Function<T, @Nullable String> typeOnAdd,
-                                                      Function<T, ?> valueOnAdd,
-                                                      BinaryOperator<@Nullable T> onChange) {
-        List<TreeDatum> data = new ArrayList<>(Math.max(
-                after == null ? 0 : after.size(),
-                before == null ? 0 : before.size()));
+    public <T> void listDifferences(@Nullable List<T> after,
+                                    @Nullable List<T> before,
+                                    Function<T, UUID> elementId,
+                                    Function<T, @Nullable String> typeOnAdd,
+                                    Function<T, ?> valueOnAdd,
+                                    BinaryOperator<@Nullable T> onChange) {
         if (before == after) {
-            data.add(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
+            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
         } else if (after == null) {
-            data.add(new TreeDatum(TreeDatum.State.DELETE, null, null));
+            put(new TreeDatum(TreeDatum.State.DELETE, null, null));
         } else if (before == null) {
-            data.add(new TreeDatum(TreeDatum.State.CHANGE, null, after.stream()
+            put(new TreeDatum(TreeDatum.State.CHANGE, null, after.stream()
                     .map(a -> ADDED_LIST_ITEM).collect(toList())));
-            for (T t : after) {
-                data.add(new TreeDatum(TreeDatum.State.ADD, typeOnAdd.apply(t), valueOnAdd.apply(t)));
+            for (T anAfter : after) {
+                put(new TreeDatum(TreeDatum.State.ADD, typeOnAdd.apply(anAfter), valueOnAdd.apply(anAfter)));
+                onChange.apply(anAfter, null);
             }
         } else {
             Map<UUID, Integer> beforeSet = new IdentityHashMap<>();
@@ -146,24 +148,24 @@ public class TreeDataSendQueue {
                 positions.add(beforePos == null ? ADDED_LIST_ITEM : beforePos);
             }
 
-            data.add(new TreeDatum(TreeDatum.State.CHANGE, null, positions));
+            put(new TreeDatum(TreeDatum.State.CHANGE, null, positions));
 
             for (T anAfter : after) {
                 Integer beforePos = beforeSet.get(elementId.apply(anAfter));
                 if (beforePos == null) {
-                    data.add(new TreeDatum(TreeDatum.State.ADD, typeOnAdd.apply(anAfter),
+                    put(new TreeDatum(TreeDatum.State.ADD, typeOnAdd.apply(anAfter),
                             valueOnAdd.apply(anAfter)));
+                    onChange.apply(anAfter, null);
                 } else {
                     T aBefore = before.get(beforePos);
                     if (aBefore == anAfter) {
-                        data.add(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
+                        put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
                     } else {
-                        data.add(new TreeDatum(TreeDatum.State.CHANGE, null, null));
+                        put(new TreeDatum(TreeDatum.State.CHANGE, null, null));
                         onChange.apply(anAfter, aBefore);
                     }
                 }
             }
         }
-        return data;
     }
 }

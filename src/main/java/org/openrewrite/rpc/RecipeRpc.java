@@ -20,7 +20,7 @@ import java.util.concurrent.*;
 import static io.moderne.jsonrpc.JsonRpcMethod.typed;
 
 public class RecipeRpc {
-    ExecutorService executorService = ForkJoinPool.commonPool();
+    private static final ExecutorService forkJoin = ForkJoinPool.commonPool();
     private final JsonRpc jsonRpc;
     private final Duration timeout;
 
@@ -58,8 +58,8 @@ public class RecipeRpc {
             BlockingQueue<TreeData> q = inProgressGetTreeDatas.computeIfAbsent(request.getTreeId(), id -> {
                 BlockingQueue<TreeData> batch = new ArrayBlockingQueue<>(1);
                 SourceFile before = remoteTrees.get(id);
-                TreeDataSendQueue sendQueue = new TreeDataSendQueue(10, before, batch::put);
-                executorService.submit(() -> {
+                TreeDataSendQueue sendQueue = new TreeDataSendQueue(1, before, batch::put);
+                forkJoin.submit(() -> {
                     try {
                         SourceFile after = localTrees.get(id);
                         Language.fromSourceFile(after).getSender().visit(after, sendQueue);

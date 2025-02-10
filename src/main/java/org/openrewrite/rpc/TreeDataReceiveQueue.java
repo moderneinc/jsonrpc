@@ -100,7 +100,8 @@ public class TreeDataReceiveQueue {
                             after.add(requireNonNull(before).get(beforeIdx));
                             break;
                         case ADD:
-                            after.add(onChange.apply(onAdd.apply(requireNonNull(msg.getValueType()), msg.getValue())));
+                            T newValue = onAdd.apply(requireNonNull(msg.getValueType()), msg.getValue());
+                            after.add(onChange.apply(newValue));
                             break;
                         case CHANGE:
                             after.add(onChange.apply(requireNonNull(before).get(beforeIdx)));
