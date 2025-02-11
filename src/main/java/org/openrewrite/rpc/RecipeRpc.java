@@ -42,6 +42,11 @@ public class RecipeRpc {
             TreeVisitor<Tree, Object> visitor = (TreeVisitor<Tree, Object>) ctor.newInstance();
             try {
                 SourceFile before = getTree(request.getTreeId(), request.getLanguage());
+
+                // We are now in sync with the remote state of the tree.
+                remoteTrees.put(before.getId(), before);
+                localTrees.put(before.getId(), before);
+
                 SourceFile after = (SourceFile) visitor.visit(before, request.getP());
                 if (after == null) {
                     localTrees.remove(before.getId());
@@ -63,6 +68,9 @@ public class RecipeRpc {
                     try {
                         SourceFile after = localTrees.get(id);
                         Language.fromSourceFile(after).getSender().visit(after, sendQueue);
+
+                        // The remote has finished pulling this tree, so update our understanding
+                        // of the remote state of this tree.
                         remoteTrees.put(id, after);
                     } catch (Throwable t) {
                         // TODO what to do here?
@@ -74,11 +82,7 @@ public class RecipeRpc {
             });
             return q.take();
         }));
-    }
-
-    public RecipeRpc bind() {
         jsonRpc.bind();
-        return this;
     }
 
     public void shutdown() {
@@ -87,7 +91,6 @@ public class RecipeRpc {
 
     public <P> Tree visit(SourceFile sourceFile, String visitorName, P p) {
         VisitResponse response = scan(sourceFile, visitorName, p);
-        System.out.println("AFTER VISIT --------------------");
         return response.isModified() ?
                 getTree(sourceFile.getId(), Language.fromSourceFile(sourceFile)) :
                 sourceFile;

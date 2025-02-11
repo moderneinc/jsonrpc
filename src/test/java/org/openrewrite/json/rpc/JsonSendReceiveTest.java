@@ -39,11 +39,11 @@ public class JsonSendReceiveTest implements RewriteTest {
 
         JsonRpc serverJsonRpc = new JsonRpc(new TraceMessageHandler("server",
           new HeaderDelimitedMessageHandler(serverIn, serverOut)));
-        server = new RecipeRpc(serverJsonRpc, Duration.ofSeconds(10)).bind();
+        server = new RecipeRpc(serverJsonRpc, Duration.ofSeconds(10));
 
         JsonRpc clientJsonRpc = new JsonRpc(new TraceMessageHandler("client",
           new HeaderDelimitedMessageHandler(clientIn, clientOut)));
-        client = new RecipeRpc(clientJsonRpc, Duration.ofSeconds(10)).bind();
+        client = new RecipeRpc(clientJsonRpc, Duration.ofSeconds(10));
     }
 
     @AfterEach
