@@ -17,6 +17,11 @@ public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
     @Override
     public Json visitDocument(Json.Document after, TreeDataSendQueue q) {
         json(after, q, before -> {
+            q.value(after.getSourcePath().toString(), (Json.Document d) -> d.getSourcePath().toString());
+            q.value(after.getCharset().name(), (Json.Document d) -> d.getCharset().name());
+            q.value(after.isCharsetBomMarked(), Json.Document::isCharsetBomMarked);
+            q.value(after.getChecksum(), Json.Document::getChecksum);
+            q.value(after.getFileAttributes(), Json.Document::getFileAttributes);
             q.visit(this, after.getValue(), Json.Document::getValue);
             q.value(after.getEof(), Json.Document::getEof);
         });

@@ -7,6 +7,8 @@ import org.openrewrite.rpc.TreeDataReceiveQueue;
 import org.openrewrite.rpc.TreeDatum;
 
 import java.lang.reflect.InvocationTargetException;
+import java.nio.charset.Charset;
+import java.nio.file.Paths;
 import java.util.List;
 
 public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
@@ -23,6 +25,15 @@ public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
         Json.Document d = before;
         d = d.withPrefix(q.value(d.getPrefix()));
         d = d.withMarkers(q.value(d.getMarkers()));
+
+        //noinspection ConstantValue
+        String sourcePath = q.value(d.getSourcePath() == null ? null : d.getSourcePath().toString());
+        d = d.withSourcePath(Paths.get(sourcePath));
+
+        d = (Json.Document) d.withCharset(Charset.forName(q.value(d.getCharset().name())));
+        d = d.withCharsetBomMarked(q.value(d.isCharsetBomMarked()));
+        d = d.withChecksum(q.value(d.getChecksum()));
+        d = d.withFileAttributes(q.value(d.getFileAttributes()));
         d = d.withValue(q.tree(this, d.getValue()));
         d = d.withEof(q.value(d.getEof()));
         return d;

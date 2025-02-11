@@ -58,9 +58,11 @@ public class JsonSendReceiveTest implements RewriteTest {
             @SneakyThrows
             @Override
             public Tree preVisit(@NonNull Tree tree, ExecutionContext ctx) {
-                return server.visit((SourceFile) tree, ChangeValue.class.getName(), 0);
+                Tree t = server.visit((SourceFile) tree, ChangeValue.class.getName(), 0);
+                stopAfterPreVisit();
+                return t;
             }
-        }));
+        })).cycles(1).expectedCyclesThatMakeChanges(1);
     }
 
     @Test
@@ -88,7 +90,7 @@ public class JsonSendReceiveTest implements RewriteTest {
         @Override
         public Json visitLiteral(Json.Literal literal, Integer p) {
             if (literal.getValue().equals("value")) {
-                return literal.withValue("changed");
+                return literal.withValue("changed").withSource("\"changed\"");
             }
             return literal;
         }

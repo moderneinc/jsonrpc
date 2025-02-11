@@ -87,6 +87,7 @@ public class RecipeRpc {
 
     public <P> Tree visit(SourceFile sourceFile, String visitorName, P p) {
         VisitResponse response = scan(sourceFile, visitorName, p);
+        System.out.println("AFTER VISIT --------------------");
         return response.isModified() ?
                 getTree(sourceFile.getId(), Language.fromSourceFile(sourceFile)) :
                 sourceFile;
