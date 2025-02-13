@@ -43,7 +43,7 @@ public enum Language {
                 return new TreeVisitor<Tree, TreeDataSendQueue>() {
                     @Override
                     public @Nullable Tree visit(@Nullable Tree tree, TreeDataSendQueue q) {
-                        q.put(new TreeDatum(TreeDatum.State.DELETE, null, null));
+                        q.put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
                         return null;
                     }
                 };

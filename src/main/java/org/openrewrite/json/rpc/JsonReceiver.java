@@ -10,74 +10,62 @@ import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.Charset;
 import java.nio.file.Paths;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
 
     public Json visitArray(Json.Array before, TreeDataReceiveQueue q) {
-        Json.Array a = before;
-        a = a.withPrefix(q.value(a.getPrefix()));
-        a = a.withMarkers(q.value(a.getMarkers()));
-        a = a.getPadding().withValues(receiveRightPadded(a.getPadding().getValues(), q));
-        return a;
+        return json(before, q, a -> a
+                .getPadding().withValues(receiveRightPadded(a.getPadding().getValues(), q)));
     }
 
     public Json visitDocument(Json.Document before, TreeDataReceiveQueue q) {
-        Json.Document d = before;
-        d = d.withPrefix(q.value(d.getPrefix()));
-        d = d.withMarkers(q.value(d.getMarkers()));
+        return json(before, q, d -> {
+            //noinspection ConstantValue
+            String sourcePath = q.value(d.getSourcePath() == null ? null : d.getSourcePath().toString());
+            d = d.withSourcePath(Paths.get(sourcePath));
 
-        //noinspection ConstantValue
-        String sourcePath = q.value(d.getSourcePath() == null ? null : d.getSourcePath().toString());
-        d = d.withSourcePath(Paths.get(sourcePath));
-
-        d = (Json.Document) d.withCharset(Charset.forName(q.value(d.getCharset().name())));
-        d = d.withCharsetBomMarked(q.value(d.isCharsetBomMarked()));
-        d = d.withChecksum(q.value(d.getChecksum()));
-        d = d.withFileAttributes(q.value(d.getFileAttributes()));
-        d = d.withValue(q.tree(this, d.getValue()));
-        d = d.withEof(q.value(d.getEof()));
-        return d;
+            d = (Json.Document) d.withCharset(Charset.forName(q.value(d.getCharset().name())));
+            d = d.withCharsetBomMarked(q.value(d.isCharsetBomMarked()));
+            d = d.withChecksum(q.value(d.getChecksum()));
+            d = d.withFileAttributes(q.value(d.getFileAttributes()));
+            d = d.withValue(q.tree(this, d.getValue()));
+            d = d.withEof(q.value(d.getEof()));
+            return d;
+        });
     }
 
     public Json visitEmpty(Json.Empty before, TreeDataReceiveQueue q) {
-        Json.Empty e = before;
-        e = e.withPrefix(q.value(e.getPrefix()));
-        e = e.withMarkers(q.value(e.getMarkers()));
-        return e;
+        return json(before, q, e -> e);
     }
 
     public Json visitIdentifier(Json.Identifier before, TreeDataReceiveQueue q) {
-        Json.Identifier i = before;
-        i = i.withPrefix(q.value(i.getPrefix()));
-        i = i.withMarkers(q.value(i.getMarkers()));
-        i = i.withName(q.value(i.getName()));
-        return i;
+        return json(before, q, i -> i.withName(q.value(i.getName())));
     }
 
     public Json visitLiteral(Json.Literal before, TreeDataReceiveQueue q) {
-        Json.Literal l = before;
-        l = l.withPrefix(q.value(l.getPrefix()));
-        l = l.withMarkers(q.value(l.getMarkers()));
-        l = l.withSource(q.value(l.getSource()));
-        l = l.withValue(q.value(l.getValue()));
-        return l;
+        return json(before, q, l -> l
+                .withSource(q.value(l.getSource()))
+                .withValue(q.value(l.getValue())));
     }
 
     public Json visitMember(Json.Member before, TreeDataReceiveQueue q) {
-        Json.Member m = before;
-        m = m.withPrefix(q.value(m.getPrefix()));
-        m = m.withMarkers(q.value(m.getMarkers()));
-        m = m.getPadding().withKey(receiveRightPadded(m.getPadding().getKey(), q));
-        m = m.withValue(q.tree(this, m.getValue()));
-        return m;
+        return json(before, q, m -> m
+                .getPadding().withKey(receiveRightPadded(m.getPadding().getKey(), q))
+                .withValue(q.tree(this, m.getValue())));
     }
 
     public Json visitObject(Json.JsonObject before, TreeDataReceiveQueue q) {
-        Json.JsonObject o = before;
-        o = o.withPrefix(q.value(o.getPrefix()));
-        o = o.withMarkers(q.value(o.getMarkers()));
-        o = o.getPadding().withMembers(receiveRightPadded(o.getPadding().getMembers(), q));
-        return o;
+        return json(before, q, o -> o
+                .getPadding().withMembers(receiveRightPadded(o.getPadding().getMembers(), q)));
+    }
+
+    private <J extends Json> J json(J before, TreeDataReceiveQueue q, UnaryOperator<J> onChange) {
+        J b = before;
+        b = b.withPrefix(q.value(b.getPrefix()));
+        b = b.withMarkers(q.value(b.getMarkers()));
+        b = onChange.apply(b);
+        return b;
     }
 
     private <T extends Json> JsonRightPadded<T> newJsonRightPadded() {
@@ -100,7 +88,6 @@ public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
                 return null;
             case ADD:
                 return onRightPaddedChanged(newJsonRightPadded(), q);
-
             case CHANGE:
                 return onRightPaddedChanged(before, q);
             default:

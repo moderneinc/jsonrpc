@@ -70,8 +70,8 @@ public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
 
     private <T extends Json> Json json(T after, TreeDataSendQueue q, Consumer<@Nullable T> onChange) {
         return q.tree(after, before -> {
-            q.value(after.getPrefix(), Json::getPrefix);
-            q.value(after.getMarkers(), Tree::getMarkers);
+            q.reference(after.getPrefix(), Json::getPrefix);
+            q.markers(after.getMarkers(), Tree::getMarkers);
             onChange.accept(before);
         });
     }
@@ -111,9 +111,9 @@ public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
         if (anAfter != null) {
             setCursor(getCursor().getParent());
         }
-        q.value(anAfter == null ? null : anAfter.getAfter(),
+        q.reference(anAfter == null ? null : anAfter.getAfter(),
                 p -> aBefore == null ? null : aBefore.getAfter());
-        q.value(anAfter == null ? null : anAfter.getMarkers(),
+        q.markers(anAfter == null ? null : anAfter.getMarkers(),
                 p -> aBefore == null ? null : aBefore.getMarkers());
     }
 }

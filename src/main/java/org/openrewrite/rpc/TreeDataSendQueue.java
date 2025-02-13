@@ -4,6 +4,7 @@ import org.jspecify.annotations.Nullable;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
 import org.openrewrite.internal.ThrowingConsumer;
+import org.openrewrite.marker.Markers;
 
 import java.util.*;
 import java.util.function.BinaryOperator;
@@ -20,12 +21,14 @@ public class TreeDataSendQueue {
     private final int batchSize;
     private final List<TreeDatum> batch;
     private final Consumer<TreeData> drain;
+    private final Map<Object, Integer> refs;
 
-    public TreeDataSendQueue(int batchSize, @Nullable Tree before, ThrowingConsumer<TreeData> drain) {
+    public TreeDataSendQueue(int batchSize, @Nullable Tree before, ThrowingConsumer<TreeData> drain, Map<Object, Integer> refs) {
         this.batchSize = batchSize;
         this.batch = new ArrayList<>(batchSize);
         this.before = before;
         this.drain = drain;
+        this.refs = refs;
     }
 
     public void put(TreeDatum treeDatum) {
@@ -51,27 +54,55 @@ public class TreeDataSendQueue {
         T before = this.before == null ? null : beforeFn.apply((Parent) this.before);
 
         if (before == after) {
-            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
+            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
         } else if (before == null) {
-            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), after));
+            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), after, null));
         } else if (after == null) {
-            put(new TreeDatum(TreeDatum.State.DELETE, null, null));
+            put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
         } else {
-            put(new TreeDatum(TreeDatum.State.CHANGE, after.getClass().getName(), after));
+            put(new TreeDatum(TreeDatum.State.CHANGE, after.getClass().getName(), after, null));
+        }
+    }
+
+    public <Parent, T> void reference(@Nullable T after, Function<Parent, @Nullable T> beforeFn) {
+        reference(after, beforeFn, before -> {
+        });
+    }
+
+    public <Parent, T> void reference(@Nullable T after, Function<Parent, @Nullable T> beforeFn, Consumer<@Nullable T> onChange) {
+        //noinspection unchecked
+        T before = this.before == null ? null : beforeFn.apply((Parent) this.before);
+
+        if (before == after) {
+            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
+        } else if (before == null) {
+            if (refs.containsKey(after)) {
+                put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), null, refs.get(after)));
+            } else {
+                int ref = refs.size() + 1;
+                refs.put(after, ref);
+                put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), after, ref));
+                onChange.accept(null);
+            }
+        } else if (after == null) {
+            put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
+        } else {
+            put(new TreeDatum(TreeDatum.State.CHANGE, after.getClass().getName(), after, null));
+            onChange.accept(before);
         }
     }
 
     public <T extends Tree> T tree(@Nullable T after, Consumer<@Nullable T> onChange) {
         if (before == after) {
-            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
+            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
         } else if (before == null) {
-            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), after.getId()));
+            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), after.getId(), null));
             //noinspection unchecked
             onChange.accept((T) before);
         } else if (after == null) {
-            put(new TreeDatum(TreeDatum.State.DELETE, null, null));
+            put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
         } else {
-            put(new TreeDatum(TreeDatum.State.CHANGE, null, null));
+            put(new TreeDatum(TreeDatum.State.CHANGE, null, null, null));
             //noinspection unchecked
             onChange.accept((T) before);
         }
@@ -79,16 +110,24 @@ public class TreeDataSendQueue {
         return after;
     }
 
+    @SuppressWarnings("UnusedReturnValue")
+    public <Parent> @Nullable Markers markers(@Nullable Markers after, Function<Parent, @Nullable Markers> beforeFn) {
+        reference(after, beforeFn, before -> {
+            // TODO iterate over markers and send list events for each
+        });
+        return after;
+    }
+
     public <T> T value(@Nullable T after, @Nullable T before, Runnable onChange) {
         if (before == after) {
-            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
+            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
         } else if (before == null) {
-            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), null));
+            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), null, null));
             onChange.run();
         } else if (after == null) {
-            put(new TreeDatum(TreeDatum.State.DELETE, null, null));
+            put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
         } else {
-            put(new TreeDatum(TreeDatum.State.CHANGE, null, null));
+            put(new TreeDatum(TreeDatum.State.CHANGE, null, null, null));
             onChange.run();
         }
         //noinspection DataFlowIssue
@@ -126,14 +165,14 @@ public class TreeDataSendQueue {
                                     Function<T, ?> valueOnAdd,
                                     BinaryOperator<@Nullable T> onChange) {
         if (before == after) {
-            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
+            put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
         } else if (after == null) {
-            put(new TreeDatum(TreeDatum.State.DELETE, null, null));
+            put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
         } else if (before == null) {
             put(new TreeDatum(TreeDatum.State.CHANGE, null, after.stream()
-                    .map(a -> ADDED_LIST_ITEM).collect(toList())));
+                    .map(a -> ADDED_LIST_ITEM).collect(toList()), null));
             for (T anAfter : after) {
-                put(new TreeDatum(TreeDatum.State.ADD, typeOnAdd.apply(anAfter), valueOnAdd.apply(anAfter)));
+                put(new TreeDatum(TreeDatum.State.ADD, typeOnAdd.apply(anAfter), valueOnAdd.apply(anAfter), null));
                 onChange.apply(anAfter, null);
             }
         } else {
@@ -148,20 +187,20 @@ public class TreeDataSendQueue {
                 positions.add(beforePos == null ? ADDED_LIST_ITEM : beforePos);
             }
 
-            put(new TreeDatum(TreeDatum.State.CHANGE, null, positions));
+            put(new TreeDatum(TreeDatum.State.CHANGE, null, positions, null));
 
             for (T anAfter : after) {
                 Integer beforePos = beforeSet.get(elementId.apply(anAfter));
                 if (beforePos == null) {
                     put(new TreeDatum(TreeDatum.State.ADD, typeOnAdd.apply(anAfter),
-                            valueOnAdd.apply(anAfter)));
+                            valueOnAdd.apply(anAfter), null));
                     onChange.apply(anAfter, null);
                 } else {
                     T aBefore = before.get(beforePos);
                     if (aBefore == anAfter) {
-                        put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null));
+                        put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
                     } else {
-                        put(new TreeDatum(TreeDatum.State.CHANGE, null, null));
+                        put(new TreeDatum(TreeDatum.State.CHANGE, null, null, null));
                         onChange.apply(anAfter, aBefore);
                     }
                 }

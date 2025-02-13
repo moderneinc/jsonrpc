@@ -3,6 +3,7 @@ package org.openrewrite.rpc;
 import org.junit.jupiter.api.Test;
 import org.openrewrite.internal.ListUtils;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -25,14 +26,14 @@ public class TreeDataSendQueueTest {
         CountDownLatch latch = new CountDownLatch(1);
         TreeDataSendQueue q = new TreeDataSendQueue(10, null, t -> {
             assertThat(t.getData()).containsExactly(
-              new TreeDatum(TreeDatum.State.CHANGE, null, List.of(0, -1, -1, 2)),
-              new TreeDatum(TreeDatum.State.NO_CHANGE, null, null) /* A */,
-              new TreeDatum(TreeDatum.State.ADD, "string", ids.get("E")),
-              new TreeDatum(TreeDatum.State.ADD, "string", ids.get("F")),
-              new TreeDatum(TreeDatum.State.NO_CHANGE, null, null) /* C */
+              new TreeDatum(TreeDatum.State.CHANGE, null, List.of(0, -1, -1, 2), null),
+              new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null) /* A */,
+              new TreeDatum(TreeDatum.State.ADD, "string", ids.get("E"), null),
+              new TreeDatum(TreeDatum.State.ADD, "string", ids.get("F"), null),
+              new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null) /* C */
             );
             latch.countDown();
-        });
+        }, new HashMap<>());
 
         q.listDifferences(after, before, ids::get,
           t -> "string", ids::get, (anAfter, aBefore) -> null);

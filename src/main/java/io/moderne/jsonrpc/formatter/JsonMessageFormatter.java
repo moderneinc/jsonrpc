@@ -16,6 +16,7 @@
 package io.moderne.jsonrpc.formatter;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
@@ -31,7 +32,8 @@ import java.util.Map;
 
 public class JsonMessageFormatter implements MessageFormatter {
     ObjectMapper mapper = new ObjectMapper()
-            .registerModule(new ParameterNamesModule());
+            .registerModule(new ParameterNamesModule())
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     public JsonMessageFormatter() {
         mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()

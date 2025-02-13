@@ -9,6 +9,7 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.function.BiFunction;
 import java.util.function.Supplier;
@@ -18,9 +19,11 @@ import static java.util.Objects.requireNonNull;
 
 public class TreeDataReceiveQueue {
     private final List<TreeDatum> batch;
+    private final Map<Integer, Object> refs;
     private final Supplier<TreeData> pull;
 
-    public TreeDataReceiveQueue(Supplier<TreeData> pull) {
+    public TreeDataReceiveQueue(Map<Integer, Object> refs, Supplier<TreeData> pull) {
+        this.refs = refs;
         this.batch = new ArrayList<>();
         this.pull = pull;
     }
@@ -42,6 +45,15 @@ public class TreeDataReceiveQueue {
             case DELETE:
                 return null;
             case ADD:
+                Integer ref = message.getRef();
+                if (ref != null) {
+                    if (refs.containsKey(ref)) {
+                        //noinspection unchecked
+                        return (V) refs.get(ref);
+                    } else {
+                        refs.put(ref, message.getValue());
+                    }
+                }
             case CHANGE:
                 return message.getValue();
             default:

@@ -13,6 +13,9 @@ import org.openrewrite.Tree;
 
 import java.util.Map;
 
+/**
+ * A single piece of data in a tree, which can be a marker, leaf value, tree element, etc.
+ */
 @Value
 public class TreeDatum {
     private static final ObjectMapper mapper = JsonMapper.builder()
@@ -45,6 +48,15 @@ public class TreeDatum {
      */
     @Nullable
     Object value;
+
+    /**
+     * Used for instances that should be referentially equal in multiple parts
+     * of the tree (e.g. Space, some Marker types, JavaType). The first time the
+     * object is seen, it is transmitted with a ref ID. Subsequent references
+     * to the same object are transmitted with the ref ID and no value.
+     */
+    @Nullable
+    Integer ref;
 
     public <V> V getValue() {
         if (value instanceof Map) {

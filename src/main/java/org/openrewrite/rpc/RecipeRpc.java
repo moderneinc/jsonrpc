@@ -13,6 +13,7 @@ import org.openrewrite.rpc.request.VisitResponse;
 import java.lang.reflect.Constructor;
 import java.time.Duration;
 import java.util.HashMap;
+import java.util.IdentityHashMap;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.*;
@@ -26,6 +27,13 @@ public class RecipeRpc {
 
     private final Map<UUID, SourceFile> remoteTrees = new HashMap<>();
     private final Map<UUID, SourceFile> localTrees = new HashMap<>();
+
+    /**
+     * Keeps track of objects that need to be referentially deduplicated, and
+     * the ref IDs to look them up by on the remote.
+     */
+    private final Map<Object, Integer> localRefs = new IdentityHashMap<>();
+    private final Map<Integer, Object> remoteRefs = new IdentityHashMap<>();
 
     // TODO This should be keyed on both the visit (transaction) ID in addition to the tree ID
     private final Map<UUID, BlockingQueue<TreeData>> inProgressGetTreeDatas = new HashMap<>();
@@ -63,7 +71,7 @@ public class RecipeRpc {
             BlockingQueue<TreeData> q = inProgressGetTreeDatas.computeIfAbsent(request.getTreeId(), id -> {
                 BlockingQueue<TreeData> batch = new ArrayBlockingQueue<>(1);
                 SourceFile before = remoteTrees.get(id);
-                TreeDataSendQueue sendQueue = new TreeDataSendQueue(1, before, batch::put);
+                TreeDataSendQueue sendQueue = new TreeDataSendQueue(10, before, batch::put, localRefs);
                 forkJoin.submit(() -> {
                     try {
                         SourceFile after = localTrees.get(id);
@@ -104,7 +112,7 @@ public class RecipeRpc {
     }
 
     private SourceFile getTree(UUID treeId, Language language) {
-        TreeDataReceiveQueue q = new TreeDataReceiveQueue(() -> send("getTree",
+        TreeDataReceiveQueue q = new TreeDataReceiveQueue(remoteRefs, () -> send("getTree",
                 new GetTreeDataRequest(treeId), TreeData.class));
         return q.tree(language.getReceiver(), localTrees.get(treeId));
     }
