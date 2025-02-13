@@ -1,5 +1,6 @@
 package org.openrewrite.rpc;
 
+import org.jetbrains.annotations.NotNull;
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
@@ -56,12 +57,20 @@ public class TreeDataSendQueue {
         if (before == after) {
             put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
         } else if (before == null) {
-            put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), after, null));
+            put(new TreeDatum(TreeDatum.State.ADD, getValueType(after), after, null));
         } else if (after == null) {
             put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
         } else {
-            put(new TreeDatum(TreeDatum.State.CHANGE, after.getClass().getName(), after, null));
+            put(new TreeDatum(TreeDatum.State.CHANGE, getValueType(after), after, null));
         }
+    }
+
+    private static @Nullable String getValueType(Object after) {
+        Class<?> type = after.getClass();
+        if (type.isPrimitive() || type.getPackage().getName().startsWith("java.lang")) {
+            return null;
+        }
+        return type.getName();
     }
 
     public <Parent, T> void reference(@Nullable T after, Function<Parent, @Nullable T> beforeFn) {
