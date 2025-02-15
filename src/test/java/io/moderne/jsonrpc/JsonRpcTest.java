@@ -53,27 +53,27 @@ public class JsonRpcTest {
     @Test
     void requestResponse() throws ExecutionException, InterruptedException, TimeoutException {
         JsonRpcSuccess response = jsonRpc
-                .method("hello", JsonRpcMethod.named("name", (String name) -> "Hello " + name))
+                .method("hello", JsonRpcMethod.typed(Person.class, person -> "Hello " + person.name))
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
-                        .namedParameter("name", "Jon")
+                        .namedParameters(new Person("Jon"))
                         .build())
                 .get(5, TimeUnit.SECONDS);
 
-        assertThat(response.<String>getResult()).isEqualTo("Hello Jon");
+        assertThat(response.getResult()).isEqualTo("Hello Jon");
     }
 
     @Test
     void methodThrowsException() {
         assertThatThrownBy(() -> jsonRpc
-                .method("hello", JsonRpcMethod.named("name", (String name) -> {
+                .method("hello", JsonRpcMethod.typed(Person.class, person -> {
                     throw new IllegalStateException("Boom");
                 }))
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
-                        .namedParameter("name", "Jon")
+                        .namedParameters(new Person("Jon"))
                         .build())
                 .get(5, TimeUnit.SECONDS)
         ).hasCauseInstanceOf(JsonRpcException.class);
@@ -83,8 +83,8 @@ public class JsonRpcTest {
     void notification() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         jsonRpc
-                .method("hello", JsonRpcMethod.named("name", (String name) -> {
-                    assertThat(name).isEqualTo("Jon");
+                .method("hello", JsonRpcMethod.typed(Person.class, person -> {
+                    assertThat(person.name).isEqualTo("Jon");
                     latch.countDown();
                     return null;
                 }))
@@ -111,9 +111,9 @@ public class JsonRpcTest {
     }
 
     @Test
-    void positionalRequestNamedParamHandler() {
+    void positionalRequestMismatchedToNamedParameterMethod() {
         assertThatThrownBy(() -> jsonRpc
-                .method("hello", JsonRpcMethod.named("name", (String name) -> "Hello " + name))
+                .method("hello", JsonRpcMethod.typed(Person.class, person -> "Hello " + person.name))
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
@@ -121,5 +121,8 @@ public class JsonRpcTest {
                         .build())
                 .get(5, TimeUnit.SECONDS)
         ).hasCauseInstanceOf(JsonRpcException.class);
+    }
+
+    record Person(String name) {
     }
 }

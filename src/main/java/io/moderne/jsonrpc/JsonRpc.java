@@ -23,7 +23,7 @@ import java.util.concurrent.*;
 
 @RequiredArgsConstructor
 public class JsonRpc {
-    private static final ForkJoinPool forkJoin = new ForkJoinPool(
+    private final ForkJoinPool forkJoin = new ForkJoinPool(
             4, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true);
 
     private final Map<String, JsonRpcMethod> methods = new ConcurrentHashMap<>();
@@ -55,6 +55,7 @@ public class JsonRpc {
             @Override
             protected void compute() {
                 while (!shutdown) {
+                    String requestId = null;
                     try {
                         JsonRpcMessage msg = messageHandler.receive();
                         if (msg instanceof JsonRpcResponse) {
@@ -70,6 +71,7 @@ public class JsonRpc {
                             }
                         } else if (msg instanceof JsonRpcRequest) {
                             JsonRpcRequest request = (JsonRpcRequest) msg;
+                            requestId = request.getId();
                             JsonRpcMethod method = methods.get(request.getMethod());
                             if (method == null) {
                                 messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()));
@@ -89,7 +91,7 @@ public class JsonRpc {
                             }
                         }
                     } catch (Throwable t) {
-                        t.printStackTrace();
+                        messageHandler.send(JsonRpcError.internalError(requestId, t));
                     }
                 }
             }
@@ -99,5 +101,6 @@ public class JsonRpc {
 
     public void shutdown() {
         shutdown = true;
+        forkJoin.shutdown();
     }
 }
