@@ -11,6 +11,7 @@ import org.openrewrite.rpc.TreeDataSendQueue;
 
 import java.util.List;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
 
@@ -57,7 +58,7 @@ public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
     public Json visitMember(Json.Member after, TreeDataSendQueue q) {
         return json(after, q, before -> {
             visitRightPadded(after.getPadding().getKey(),
-                    before == null ? null : before.getPadding().getKey(), q);
+                    (Json.Member b) -> b.getPadding().getKey(), q);
             q.visit(this, after.getValue(), Json.Member::getValue);
         });
     }
@@ -76,10 +77,10 @@ public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
         });
     }
 
-    private <T extends Json> void visitRightPadded(@Nullable JsonRightPadded<T> after,
-                                                   @Nullable JsonRightPadded<T> before,
-                                                   TreeDataSendQueue q) {
-        q.value(after, before, () -> onRightPaddedChange(after, before, q));
+    private <Parent, T extends Json> void visitRightPadded(@Nullable JsonRightPadded<T> after,
+                                                           Function<Parent, @Nullable JsonRightPadded<T>> beforeFn,
+                                                           TreeDataSendQueue q) {
+        q.value(after, beforeFn, before -> onRightPaddedChange(after, before, q));
     }
 
     private <T extends Json> void visitRightPadded(@Nullable List<JsonRightPadded<T>> after,
@@ -99,21 +100,23 @@ public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
     }
 
     private <T extends Json> void onRightPaddedChange(@Nullable JsonRightPadded<T> anAfter,
-                                                      @Nullable JsonRightPadded<T> aBefore,
+                                                      @Nullable JsonRightPadded<T> before,
                                                       TreeDataSendQueue q) {
+        Tree after = anAfter == null ? null : anAfter.getElement();
+
         if (anAfter != null) {
             // Not essential to the operation of the sender, but useful for debugging
             setCursor(new Cursor(getCursor(), anAfter));
         }
         q.visit(this,
-                anAfter == null ? null : anAfter.getElement(),
-                p -> aBefore == null ? null : aBefore.getElement());
+                after,
+                p -> before == null ? null : before.getElement());
         if (anAfter != null) {
             setCursor(getCursor().getParent());
         }
         q.reference(anAfter == null ? null : anAfter.getAfter(),
-                p -> aBefore == null ? null : aBefore.getAfter());
+                p -> before == null ? null : before.getAfter());
         q.markers(anAfter == null ? null : anAfter.getMarkers(),
-                p -> aBefore == null ? null : aBefore.getMarkers());
+                p -> before == null ? null : before.getMarkers());
     }
 }

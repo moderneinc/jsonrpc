@@ -21,10 +21,13 @@ import java.util.concurrent.*;
 import static io.moderne.jsonrpc.JsonRpcMethod.typed;
 
 public class RecipeRpc {
-    private static final ExecutorService forkJoin = ForkJoinPool.commonPool();
     private final JsonRpc jsonRpc;
     private final Duration timeout;
 
+    /**
+     * Keeps track of the local and remote state of trees that are used in
+     * visits.
+     */
     private final Map<UUID, SourceFile> remoteTrees = new HashMap<>();
     private final Map<UUID, SourceFile> localTrees = new HashMap<>();
 
@@ -37,6 +40,8 @@ public class RecipeRpc {
 
     // TODO This should be keyed on both the visit (transaction) ID in addition to the tree ID
     private final Map<UUID, BlockingQueue<TreeData>> inProgressGetTreeDatas = new HashMap<>();
+
+    private static final ExecutorService forkJoin = ForkJoinPool.commonPool();
 
     public RecipeRpc(JsonRpc jsonRpc, Duration timeout) {
         this.jsonRpc = jsonRpc;

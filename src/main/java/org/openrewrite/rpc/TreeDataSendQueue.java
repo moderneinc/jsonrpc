@@ -1,6 +1,6 @@
 package org.openrewrite.rpc;
 
-import org.jetbrains.annotations.NotNull;
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
@@ -127,17 +127,20 @@ public class TreeDataSendQueue {
         return after;
     }
 
-    public <T> T value(@Nullable T after, @Nullable T before, Runnable onChange) {
+    public <Parent, T> T value(@Nullable T after, Function<@NonNull Parent, @Nullable T> beforeFn, Consumer<T> onChange) {
+        //noinspection unchecked
+        T before = this.before == null ? null : beforeFn.apply((Parent) this.before);
+
         if (before == after) {
             put(new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null));
         } else if (before == null) {
             put(new TreeDatum(TreeDatum.State.ADD, after.getClass().getName(), null, null));
-            onChange.run();
+            onChange.accept(before);
         } else if (after == null) {
             put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
         } else {
             put(new TreeDatum(TreeDatum.State.CHANGE, null, null, null));
-            onChange.run();
+            onChange.accept(before);
         }
         //noinspection DataFlowIssue
         return after;
