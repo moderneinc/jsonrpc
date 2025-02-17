@@ -20,9 +20,9 @@ dependencies {
     testImplementation("org.openrewrite:rewrite-test:latest.release")
 }
 
-configure<NexusPublishExtension>() {
+configure<NexusPublishExtension> {
     repositories {
-        sonatype {
+        named("sonatype") {
             nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
             snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
         }
