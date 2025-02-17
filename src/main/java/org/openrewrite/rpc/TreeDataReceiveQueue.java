@@ -32,14 +32,45 @@ public class TreeDataReceiveQueue {
         return batch.remove(0);
     }
 
+    /**
+     * Receive a value from the queue and apply a function to it, usually to
+     * convert it to a string or fetch some nested object off of it.
+     *
+     * @param before The value to apply the function to, which may be null.
+     * @param apply  A function that is called only when before is non-null.
+     * @param <T>    A before value ahead of the function call.
+     * @param <U>    The return type of the function. This will match the type that is
+     *               being received from the remote.
+     * @return The received value. To set the correct before state when the received state
+     * is NO_CHANGE or CHANGE, the function is applied to the before parameter, unless before
+     * is null in which case the before state is assumed to be null.
+     */
     public <T, U> U receiveAndGet(@Nullable T before, Function<T, U> apply) {
         return receive(before == null ? null : apply.apply(before), null);
     }
 
+    /**
+     * Receive a simple value from the remote.
+     *
+     * @param before The before state.
+     * @param <T>    The type of the value being received.
+     * @return The received value.
+     */
     public <T> T receive(@Nullable T before) {
         return receive(before, null);
     }
 
+    /**
+     * Receive a value from the remote and, when it is an ADD or CHANGE, invoke a callback
+     * to receive its constituent parts.
+     *
+     * @param before   The before state.
+     * @param onChange When the state is ADD or CHANGE, this function is called to receive the
+     *                 pieces of this value. If the callback is null, the value is assumed to
+     *                 be in the value part of the message and is deserialized directly.
+     * @param <T>      The type of the value being received.
+     * @return The received value.
+     */
     @SuppressWarnings("DataFlowIssue")
     public <T> T receive(@Nullable T before, @Nullable UnaryOperator<@Nullable T> onChange) {
         TreeDatum message = take();
