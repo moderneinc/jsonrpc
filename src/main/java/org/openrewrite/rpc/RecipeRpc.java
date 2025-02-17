@@ -76,11 +76,13 @@ public class RecipeRpc {
             BlockingQueue<TreeData> q = inProgressGetTreeDatas.computeIfAbsent(request.getTreeId(), id -> {
                 BlockingQueue<TreeData> batch = new ArrayBlockingQueue<>(1);
                 SourceFile before = remoteTrees.get(id);
-                TreeDataSendQueue sendQueue = new TreeDataSendQueue(10, before, batch::put, localRefs);
+                TreeDataSendQueue sendQueue = new TreeDataSendQueue(10, batch::put, localRefs);
                 forkJoin.submit(() -> {
                     try {
                         SourceFile after = localTrees.get(id);
-                        Language.fromSourceFile(after).getSender().visit(after, sendQueue);
+                        sendQueue.send(after, before, () -> Language.fromSourceFile(after)
+                                .getSender().visit(after, sendQueue));
+                        sendQueue.flush();
 
                         // The remote has finished pulling this tree, so update our understanding
                         // of the remote state of this tree.
@@ -110,6 +112,8 @@ public class RecipeRpc {
     }
 
     public <P> VisitResponse scan(SourceFile sourceFile, String visitorName, P p) {
+        // Set the local state of this tree, so that when the remote
+        // asks for it, we know what to send.
         localTrees.put(sourceFile.getId(), sourceFile);
         Language language = Language.fromSourceFile(sourceFile);
         return send("visit", new VisitRequest(visitorName, sourceFile.getId(), language, p),
@@ -119,7 +123,8 @@ public class RecipeRpc {
     private SourceFile getTree(UUID treeId, Language language) {
         TreeDataReceiveQueue q = new TreeDataReceiveQueue(remoteRefs, () -> send("getTree",
                 new GetTreeDataRequest(treeId), TreeData.class));
-        return q.tree(language.getReceiver(), localTrees.get(treeId));
+        return q.receive(localTrees.get(treeId), before -> (SourceFile) language
+                .getReceiver().visit(before, q));
     }
 
     private <P> P send(String method, RecipeRpcRequest body, Class<P> responseType) {

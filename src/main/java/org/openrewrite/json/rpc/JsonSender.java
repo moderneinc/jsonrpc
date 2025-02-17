@@ -1,122 +1,83 @@
 package org.openrewrite.json.rpc;
 
+import org.jspecify.annotations.NonNull;
 import org.jspecify.annotations.Nullable;
-import org.openrewrite.Cursor;
 import org.openrewrite.Tree;
 import org.openrewrite.json.JsonVisitor;
 import org.openrewrite.json.tree.Json;
-import org.openrewrite.json.tree.Json.JsonObject;
 import org.openrewrite.json.tree.JsonRightPadded;
 import org.openrewrite.rpc.TreeDataSendQueue;
 
-import java.util.List;
-import java.util.function.Consumer;
-import java.util.function.Function;
+import static org.openrewrite.rpc.Reference.asRef;
 
 public class JsonSender extends JsonVisitor<TreeDataSendQueue> {
 
     @Override
-    public Json visitDocument(Json.Document after, TreeDataSendQueue q) {
-        json(after, q, before -> {
-            q.value(after.getSourcePath().toString(), (Json.Document d) -> d.getSourcePath().toString());
-            q.value(after.getCharset().name(), (Json.Document d) -> d.getCharset().name());
-            q.value(after.isCharsetBomMarked(), Json.Document::isCharsetBomMarked);
-            q.value(after.getChecksum(), Json.Document::getChecksum);
-            q.value(after.getFileAttributes(), Json.Document::getFileAttributes);
-            q.visit(this, after.getValue(), Json.Document::getValue);
-            q.value(after.getEof(), Json.Document::getEof);
-        });
-        q.flush();
-        return after;
-    }
-
-    public Json visitArray(Json.Array after, TreeDataSendQueue q) {
-        return json(after, q, before -> visitRightPadded(
-                after.getPadding().getValues(),
-                before == null ? null : before.getPadding().getValues(), q));
-    }
-
-    public Json visitEmpty(Json.Empty after, TreeDataSendQueue q) {
-        return json(after, q, before -> {
-        });
+    public Json preVisit(@NonNull Json j, TreeDataSendQueue q) {
+        q.getAndSend(j, Tree::getId);
+        q.getAndSend(j, j2 -> asRef(j2.getPrefix()));
+        q.getAndSend(j, j2 -> asRef(j2.getMarkers()));
+        return j;
     }
 
     @Override
-    public Json visitIdentifier(Json.Identifier after, TreeDataSendQueue q) {
-        return json(after, q, before ->
-                q.value(after.getName(), Json.Identifier::getName));
+    public Json visitDocument(Json.Document document, TreeDataSendQueue q) {
+        q.getAndSend(document, (Json.Document d) -> d.getSourcePath().toString());
+        q.getAndSend(document, (Json.Document d) -> d.getCharset().name());
+        q.getAndSend(document, Json.Document::isCharsetBomMarked);
+        q.getAndSend(document, Json.Document::getChecksum);
+        q.getAndSend(document, Json.Document::getFileAttributes);
+        q.getAndSend(document, Json.Document::getValue, j -> visit(j, q));
+        q.getAndSend(document, d -> asRef(d.getEof()));
+        return document;
     }
 
     @Override
-    public Json visitLiteral(Json.Literal after, TreeDataSendQueue q) {
-        return json(after, q, before -> {
-            q.value(after.getSource(), Json.Literal::getSource);
-            q.value(after.getValue(), Json.Literal::getValue);
-        });
+    public Json visitArray(Json.Array array, TreeDataSendQueue q) {
+        q.getAndSendList(array, a -> a.getPadding().getValues(),
+                j -> j.getElement().getId(),
+                j -> visitRightPadded(j, q));
+        return array;
     }
 
-    public Json visitMember(Json.Member after, TreeDataSendQueue q) {
-        return json(after, q, before -> {
-            visitRightPadded(after.getPadding().getKey(),
-                    (Json.Member b) -> b.getPadding().getKey(), q);
-            q.visit(this, after.getValue(), Json.Member::getValue);
-        });
+    @Override
+    public Json visitEmpty(Json.Empty empty, TreeDataSendQueue q) {
+        return empty;
     }
 
-    public Json visitObject(JsonObject after, TreeDataSendQueue q) {
-        return json(after, q, before -> visitRightPadded(
-                after.getPadding().getMembers(),
-                before == null ? null : before.getPadding().getMembers(), q));
+    @Override
+    public Json visitIdentifier(Json.Identifier identifier, TreeDataSendQueue q) {
+        q.getAndSend(identifier, Json.Identifier::getName);
+        return identifier;
     }
 
-    private <T extends Json> Json json(T after, TreeDataSendQueue q, Consumer<@Nullable T> onChange) {
-        return q.tree(after, before -> {
-            q.reference(after.getPrefix(), Json::getPrefix);
-            q.markers(after.getMarkers(), Tree::getMarkers);
-            onChange.accept(before);
-        });
+    @Override
+    public Json visitLiteral(Json.Literal literal, TreeDataSendQueue q) {
+        q.getAndSend(literal, Json.Literal::getSource);
+        q.getAndSend(literal, Json.Literal::getValue);
+        return literal;
     }
 
-    private <Parent, T extends Json> void visitRightPadded(@Nullable JsonRightPadded<T> after,
-                                                           Function<Parent, @Nullable JsonRightPadded<T>> beforeFn,
-                                                           TreeDataSendQueue q) {
-        q.value(after, beforeFn, before -> onRightPaddedChange(after, before, q));
+    @Override
+    public Json visitMember(Json.Member member, TreeDataSendQueue q) {
+        q.getAndSend(member, m -> m.getPadding().getKey(), j -> visitRightPadded(j, q));
+        q.getAndSend(member, Json.Member::getValue, j -> visit(j, q));
+        return member;
     }
 
-    private <T extends Json> void visitRightPadded(@Nullable List<JsonRightPadded<T>> after,
-                                                   @Nullable List<JsonRightPadded<T>> before,
-                                                   TreeDataSendQueue q) {
-        q.listDifferences(
-                after,
-                before,
-                p -> p.getElement().getId(),
-                t -> t.getElement().getClass().getName(),
-                t -> t.getElement().getId(),
-                (anAfter, aBefore) -> {
-                    onRightPaddedChange(anAfter, aBefore, q);
-                    return anAfter;
-                }
-        );
+    @Override
+    public Json visitObject(Json.JsonObject obj, TreeDataSendQueue q) {
+        q.getAndSendList(obj, o -> o.getPadding().getMembers(),
+                j -> j.getElement().getId(),
+                j -> visitRightPadded(j, q));
+        return obj;
     }
 
-    private <T extends Json> void onRightPaddedChange(@Nullable JsonRightPadded<T> anAfter,
-                                                      @Nullable JsonRightPadded<T> before,
-                                                      TreeDataSendQueue q) {
-        Tree after = anAfter == null ? null : anAfter.getElement();
-
-        if (anAfter != null) {
-            // Not essential to the operation of the sender, but useful for debugging
-            setCursor(new Cursor(getCursor(), anAfter));
-        }
-        q.visit(this,
-                after,
-                p -> before == null ? null : before.getElement());
-        if (anAfter != null) {
-            setCursor(getCursor().getParent());
-        }
-        q.reference(anAfter == null ? null : anAfter.getAfter(),
-                p -> before == null ? null : before.getAfter());
-        q.markers(anAfter == null ? null : anAfter.getMarkers(),
-                p -> before == null ? null : before.getMarkers());
+    @Override
+    public @Nullable <T extends Json> JsonRightPadded<T> visitRightPadded(@Nullable JsonRightPadded<T> right, TreeDataSendQueue q) {
+        q.getAndSend(right, JsonRightPadded::getElement, j -> visit(j, q));
+        q.getAndSend(right, j -> asRef(j.getAfter()));
+        q.getAndSend(right, j -> asRef(j.getMarkers()));
+        return right;
     }
 }

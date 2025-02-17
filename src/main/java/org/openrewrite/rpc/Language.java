@@ -1,6 +1,5 @@
 package org.openrewrite.rpc;
 
-import org.jspecify.annotations.Nullable;
 import org.openrewrite.SourceFile;
 import org.openrewrite.Tree;
 import org.openrewrite.TreeVisitor;
@@ -12,13 +11,9 @@ public enum Language {
     Json,
     Properties,
     Xml,
-    Yaml,
-    Null;
+    Yaml;
 
-    public static Language fromSourceFile(@Nullable SourceFile sourceFile) {
-        if (sourceFile == null) {
-            return Null;
-        }
+    public static Language fromSourceFile(SourceFile sourceFile) {
         if (sourceFile instanceof Json) {
             return Json;
         }
@@ -39,14 +34,6 @@ public enum Language {
 
     public TreeVisitor<? extends Tree, TreeDataSendQueue> getSender() {
         switch (this) {
-            case Null:
-                return new TreeVisitor<Tree, TreeDataSendQueue>() {
-                    @Override
-                    public @Nullable Tree visit(@Nullable Tree tree, TreeDataSendQueue q) {
-                        q.put(new TreeDatum(TreeDatum.State.DELETE, null, null, null));
-                        return null;
-                    }
-                };
             case Json:
                 return new JsonSender();
             case Properties:

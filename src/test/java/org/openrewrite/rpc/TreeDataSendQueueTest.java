@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 public class TreeDataSendQueueTest {
 
     @Test
-    void listDifference() throws InterruptedException {
+    void sendDifference() throws InterruptedException {
         List<String> before = List.of("A", "B", "C", "D");
         List<String> after = List.of("A", "E", "F", "C");
         Map<String, UUID> ids = ListUtils.concatAll(before, after).stream()
@@ -24,7 +24,7 @@ public class TreeDataSendQueueTest {
           .collect(Collectors.toMap(s -> s, s -> UUID.randomUUID()));
 
         CountDownLatch latch = new CountDownLatch(1);
-        TreeDataSendQueue q = new TreeDataSendQueue(10, null, t -> {
+        TreeDataSendQueue q = new TreeDataSendQueue(10, t -> {
             assertThat(t.getData()).containsExactly(
               new TreeDatum(TreeDatum.State.CHANGE, null, List.of(0, -1, -1, 2), null),
               new TreeDatum(TreeDatum.State.NO_CHANGE, null, null, null) /* A */,
@@ -35,8 +35,8 @@ public class TreeDataSendQueueTest {
             latch.countDown();
         }, new HashMap<>());
 
-        q.listDifferences(after, before, ids::get,
-          t -> "string", ids::get, (anAfter, aBefore) -> null);
+        q.send(after, before, () -> {
+        });
         q.flush();
 
         assertThat(latch.await(10, TimeUnit.SECONDS)).isTrue();

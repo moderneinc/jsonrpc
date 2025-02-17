@@ -58,6 +58,13 @@ public class TreeDatum {
     @Nullable
     Integer ref;
 
+    public TreeDatum(State state, @Nullable String valueType, @Nullable Object value, @Nullable Integer ref) {
+        this.state = state;
+        this.valueType = valueType;
+        this.value = value;
+        this.ref = ref;
+    }
+
     public <V> V getValue() {
         if (value instanceof Map) {
             try {

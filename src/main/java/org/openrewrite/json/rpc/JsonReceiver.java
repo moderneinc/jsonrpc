@@ -1,114 +1,75 @@
 package org.openrewrite.json.rpc;
 
+import org.jspecify.annotations.NonNull;
+import org.jspecify.annotations.Nullable;
 import org.openrewrite.json.JsonVisitor;
 import org.openrewrite.json.tree.Json;
 import org.openrewrite.json.tree.JsonRightPadded;
+import org.openrewrite.json.tree.JsonValue;
 import org.openrewrite.rpc.TreeDataReceiveQueue;
-import org.openrewrite.rpc.TreeDatum;
 
-import java.lang.reflect.InvocationTargetException;
 import java.nio.charset.Charset;
+import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.util.List;
-import java.util.function.UnaryOperator;
+import java.util.UUID;
 
 public class JsonReceiver extends JsonVisitor<TreeDataReceiveQueue> {
 
-    public Json visitArray(Json.Array before, TreeDataReceiveQueue q) {
-        return json(before, q, a -> a
-                .getPadding().withValues(receiveRightPadded(a.getPadding().getValues(), q)));
+    @Override
+    public Json preVisit(@NonNull Json j, TreeDataReceiveQueue q) {
+        j = j.withId(UUID.fromString(q.receiveAndGet(j.getId(), UUID::toString)));
+        j = j.withPrefix(q.receive(j.getPrefix()));
+        j = j.withMarkers(q.receive(j.getMarkers()));
+        return j;
     }
 
-    public Json visitDocument(Json.Document before, TreeDataReceiveQueue q) {
-        return json(before, q, d -> {
-            //noinspection ConstantValue
-            String sourcePath = q.value(d.getSourcePath() == null ? null : d.getSourcePath().toString());
-            d = d.withSourcePath(Paths.get(sourcePath));
-
-            d = (Json.Document) d.withCharset(Charset.forName(q.value(d.getCharset().name())));
-            d = d.withCharsetBomMarked(q.value(d.isCharsetBomMarked()));
-            d = d.withChecksum(q.value(d.getChecksum()));
-            d = d.withFileAttributes(q.value(d.getFileAttributes()));
-            d = d.withValue(q.tree(this, d.getValue()));
-            d = d.withEof(q.value(d.getEof()));
-            return d;
-        });
+    public Json visitDocument(Json.Document document, TreeDataReceiveQueue q) {
+        String sourcePath = q.receiveAndGet(document.getSourcePath(), Path::toString);
+        return ((Json.Document) document.withSourcePath(Paths.get(sourcePath))
+                .withCharset(Charset.forName(q.receiveAndGet(document.getCharset(), Charset::name))))
+                .withCharsetBomMarked(q.receive(document.isCharsetBomMarked()))
+                .withChecksum(q.receive(document.getChecksum()))
+                .withFileAttributes(q.receive(document.getFileAttributes()))
+                .withValue(q.receive(document.getValue(), j -> (JsonValue) visit(j, q)))
+                .withEof(q.receive(document.getEof()));
     }
 
-    public Json visitEmpty(Json.Empty before, TreeDataReceiveQueue q) {
-        return json(before, q, e -> e);
+    public Json visitArray(Json.Array array, TreeDataReceiveQueue q) {
+        return array.getPadding().withValues(
+                q.receiveList(array.getPadding().getValues(), j -> visitRightPadded(j, q)));
     }
 
-    public Json visitIdentifier(Json.Identifier before, TreeDataReceiveQueue q) {
-        return json(before, q, i -> i.withName(q.value(i.getName())));
+    public Json visitEmpty(Json.Empty empty, TreeDataReceiveQueue q) {
+        return empty;
     }
 
-    public Json visitLiteral(Json.Literal before, TreeDataReceiveQueue q) {
-        return json(before, q, l -> l
-                .withSource(q.value(l.getSource()))
-                .withValue(q.value(l.getValue())));
+    public Json visitIdentifier(Json.Identifier identifier, TreeDataReceiveQueue q) {
+        return identifier.withName(q.receive(identifier.getName()));
     }
 
-    public Json visitMember(Json.Member before, TreeDataReceiveQueue q) {
-        return json(before, q, m -> m
-                .getPadding().withKey(receiveRightPadded(m.getPadding().getKey(), q))
-                .withValue(q.tree(this, m.getValue())));
+    public Json visitLiteral(Json.Literal literal, TreeDataReceiveQueue q) {
+        return literal.withSource(q.receive(literal.getSource()))
+                .withValue(q.receive(literal.getValue()));
     }
 
-    public Json visitObject(Json.JsonObject before, TreeDataReceiveQueue q) {
-        return json(before, q, o -> o
-                .getPadding().withMembers(receiveRightPadded(o.getPadding().getMembers(), q)));
+    public Json visitMember(Json.Member member, TreeDataReceiveQueue q) {
+        return member
+                .getPadding().withKey(q.receive(member.getPadding().getKey(), j -> visitRightPadded(j, q)))
+                .withValue(q.receive(member.getValue(), j -> (JsonValue) visit(j, q)));
     }
 
-    private <J extends Json> J json(J before, TreeDataReceiveQueue q, UnaryOperator<J> onChange) {
-        J b = before;
-        b = b.withPrefix(q.value(b.getPrefix()));
-        b = b.withMarkers(q.value(b.getMarkers()));
-        b = onChange.apply(b);
-        return b;
+    public Json visitObject(Json.JsonObject object, TreeDataReceiveQueue q) {
+        return object.getPadding().withMembers(
+                q.receiveList(object.getPadding().getMembers(), j -> visitRightPadded(j, q)));
     }
 
-    private <T extends Json> JsonRightPadded<T> newJsonRightPadded() {
-        try {
-            //noinspection unchecked
-            return (JsonRightPadded<T>) JsonRightPadded.class.getDeclaredConstructors()[0]
-                    .newInstance(null, null, null);
-        } catch (InstantiationException | InvocationTargetException | IllegalAccessException e) {
-            throw new RuntimeException(e);
-        }
-    }
+    @Override
+    public @Nullable <T extends Json> JsonRightPadded<T> visitRightPadded(@Nullable JsonRightPadded<T> right, TreeDataReceiveQueue q) {
+        assert right != null : "TreeDataReceiveQueue should have instantiated an empty padding";
 
-    public <T extends Json> JsonRightPadded<T> receiveRightPadded(JsonRightPadded<T> before, TreeDataReceiveQueue q) {
-        TreeDatum message = q.take();
-        switch (message.getState()) {
-            case NO_CHANGE:
-                return before;
-            case DELETE:
-                //noinspection DataFlowIssue
-                return null;
-            case ADD:
-                return onRightPaddedChanged(newJsonRightPadded(), q);
-            case CHANGE:
-                return onRightPaddedChanged(before, q);
-            default:
-                throw new UnsupportedOperationException("Unknown state type " + message.getState());
-        }
-    }
-
-    public <T extends Json> List<JsonRightPadded<T>> receiveRightPadded(List<JsonRightPadded<T>> before, TreeDataReceiveQueue q) {
-        return q.listDifferences(
-                before,
-                (type, t) -> newJsonRightPadded(),
-                t -> onRightPaddedChanged(t, q)
-        );
-    }
-
-    private <T extends Json> JsonRightPadded<T> onRightPaddedChanged(JsonRightPadded<T> before,
-                                                                     TreeDataReceiveQueue q) {
-        JsonRightPadded<T> r = before;
-        r = r.withElement(q.tree(this, r.getElement()));
-        r = r.withAfter(q.value(r.getAfter()));
-        r = r.withMarkers(q.value(r.getMarkers()));
-        return r;
+        //noinspection unchecked
+        return right.withElement(q.receive(right.getElement(), j -> (T) visit(j, q)))
+                .withAfter(q.receive(right.getAfter()))
+                .withMarkers(q.receive(right.getMarkers()));
     }
 }

@@ -1,17 +1,13 @@
 package org.openrewrite.rpc;
 
 import org.jspecify.annotations.Nullable;
-import org.openrewrite.Tree;
-import org.openrewrite.TreeVisitor;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.InvocationTargetException;
-import java.lang.reflect.Parameter;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
-import java.util.function.BiFunction;
+import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.function.UnaryOperator;
 
@@ -36,8 +32,16 @@ public class TreeDataReceiveQueue {
         return batch.remove(0);
     }
 
+    public <T, U> U receiveAndGet(@Nullable T before, Function<T, U> apply) {
+        return receive(before == null ? null : apply.apply(before), null);
+    }
+
+    public <T> T receive(@Nullable T before) {
+        return receive(before, null);
+    }
+
     @SuppressWarnings("DataFlowIssue")
-    public <V> V value(@Nullable V before) {
+    public <T> T receive(@Nullable T before, @Nullable UnaryOperator<@Nullable T> onChange) {
         TreeDatum message = take();
         switch (message.getState()) {
             case NO_CHANGE:
@@ -49,51 +53,27 @@ public class TreeDataReceiveQueue {
                 if (ref != null) {
                     if (refs.containsKey(ref)) {
                         //noinspection unchecked
-                        return (V) refs.get(ref);
+                        return (T) refs.get(ref);
                     } else {
-                        refs.put(ref, message.getValue());
+                        before = onChange == null ?
+                                message.getValue() :
+                                newObj(message.getValueType());
+                        refs.put(ref, before);
                     }
+                } else {
+                    before = onChange == null ?
+                            message.getValue() :
+                            newObj(message.getValueType());
                 }
+                // Intentional fall-through...
             case CHANGE:
-                return message.getValue();
+                return onChange == null ? message.getValue() : onChange.apply(before);
             default:
                 throw new UnsupportedOperationException("Unknown state type " + message.getState());
         }
     }
 
-    @SuppressWarnings("DataFlowIssue")
-    public <T extends Tree> T tree(TreeVisitor<? extends Tree, TreeDataReceiveQueue> visitor,
-                                   @Nullable T before) {
-        TreeDatum message = take();
-        switch (message.getState()) {
-            case NO_CHANGE:
-                return before;
-            case DELETE:
-                return null;
-            case ADD:
-                before = newTree(message.getValueType(), UUID.fromString(message.getValue()));
-                // intentional fall-through...
-            case CHANGE:
-                //noinspection unchecked
-                return (T) visitor.visitNonNull(before, this);
-            default:
-                throw new UnsupportedOperationException("Unknown state type " + message.getState());
-        }
-    }
-
-    public <T extends Tree> List<T> trees(TreeVisitor<? extends Tree, TreeDataReceiveQueue> visitor,
-                                          @Nullable List<T> before) {
-        //noinspection unchecked
-        return listDifferences(
-                before,
-                (type, v) -> newTree(type, (UUID) v),
-                v -> (T) visitor.visitNonNull(v, this)
-        );
-    }
-
-    public <T> List<T> listDifferences(@Nullable List<T> before,
-                                       BiFunction<String, Object, T> onAdd,
-                                       UnaryOperator<T> onChange) {
+    public <T> List<T> receiveList(@Nullable List<T> before, UnaryOperator<@Nullable T> onChange) {
         TreeDatum msg = take();
         switch (msg.getState()) {
             case NO_CHANGE:
@@ -102,8 +82,14 @@ public class TreeDataReceiveQueue {
             case DELETE:
                 //noinspection DataFlowIssue
                 return null;
+            case ADD:
+                before = new ArrayList<>();
+                // Intentional fall-through...
             case CHANGE:
+                msg = take(); // the next message should be a CHANGE with a list of positions
+                assert msg.getState() == TreeDatum.State.CHANGE;
                 List<Integer> positions = msg.getValue();
+
                 List<T> after = new ArrayList<>(positions.size());
                 for (int beforeIdx : positions) {
                     msg = take();
@@ -112,11 +98,11 @@ public class TreeDataReceiveQueue {
                             after.add(requireNonNull(before).get(beforeIdx));
                             break;
                         case ADD:
-                            T newValue = onAdd.apply(requireNonNull(msg.getValueType()), msg.getValue());
-                            after.add(onChange.apply(newValue));
-                            break;
+                            // Intentional fall-through...
                         case CHANGE:
-                            after.add(onChange.apply(requireNonNull(before).get(beforeIdx)));
+                            after.add(onChange.apply(beforeIdx == -1 ?
+                                    newObj(requireNonNull(msg.getValueType())) :
+                                    requireNonNull(before).get(beforeIdx)));
                             break;
                         default:
                             throw new UnsupportedOperationException("Unknown state type " + msg.getState());
@@ -128,42 +114,36 @@ public class TreeDataReceiveQueue {
         }
     }
 
-    private static <T extends Tree> T newTree(String treeType, UUID id) {
+    private static <T> T newObj(String type) {
         try {
-            Class<?> clazz = Class.forName(treeType);
+            Class<?> clazz = Class.forName(type);
             for (Constructor<?> ctor : clazz.getDeclaredConstructors()) {
-                for (Parameter param : ctor.getParameters()) {
-                    if (param.getType().equals(UUID.class)) {
-                        Object[] args = new Object[ctor.getParameterCount()];
-                        for (int i = 0; i < args.length; i++) {
-                            Class<?> paramType = ctor.getParameters()[i].getType();
-                            if (paramType.equals(UUID.class)) {
-                                args[i] = id;
-                            } else if (paramType == boolean.class) {
-                                args[i] = false;
-                            } else if (paramType == int.class) {
-                                args[i] = 0;
-                            } else if (paramType == short.class) {
-                                args[i] = (short) 0;
-                            } else if (paramType == long.class) {
-                                args[i] = 0L;
-                            } else if (paramType == byte.class) {
-                                args[i] = (byte) 0;
-                            } else if (paramType == float.class) {
-                                args[i] = 0.0f;
-                            } else if (paramType == double.class) {
-                                args[i] = 0.0d;
-                            } else if (paramType == char.class) {
-                                args[i] = '\u0000';
-                            }
-                        }
-                        ctor.setAccessible(true);
-                        //noinspection unchecked
-                        return (T) ctor.newInstance(args);
+                Object[] args = new Object[ctor.getParameterCount()];
+                for (int i = 0; i < args.length; i++) {
+                    Class<?> paramType = ctor.getParameters()[i].getType();
+                    if (paramType == boolean.class) {
+                        args[i] = false;
+                    } else if (paramType == int.class) {
+                        args[i] = 0;
+                    } else if (paramType == short.class) {
+                        args[i] = (short) 0;
+                    } else if (paramType == long.class) {
+                        args[i] = 0L;
+                    } else if (paramType == byte.class) {
+                        args[i] = (byte) 0;
+                    } else if (paramType == float.class) {
+                        args[i] = 0.0f;
+                    } else if (paramType == double.class) {
+                        args[i] = 0.0d;
+                    } else if (paramType == char.class) {
+                        args[i] = '\u0000';
                     }
                 }
+                ctor.setAccessible(true);
+                //noinspection unchecked
+                return (T) ctor.newInstance(args);
             }
-            throw new IllegalStateException("Unable to find a constructor for " + clazz + " that has a UUID argument");
+            throw new IllegalStateException("Unable to find a constructor for " + clazz);
         } catch (ClassNotFoundException | InvocationTargetException | IllegalAccessException |
                  InstantiationException e) {
             throw new RuntimeException(e);
