@@ -1,3 +1,5 @@
+import io.github.gradlenexus.publishplugin.NexusPublishExtension
+
 plugins {
     id("org.openrewrite.build.recipe-library") version "latest.release"
 }
@@ -16,4 +18,13 @@ dependencies {
     implementation("org.openrewrite:rewrite-json:latest.release")
 
     testImplementation("org.openrewrite:rewrite-test:latest.release")
+}
+
+configure<NexusPublishExtension>() {
+    repositories {
+        sonatype {
+            nexusUrl.set(uri("https://s01.oss.sonatype.org/service/local/"))
+            snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
+        }
+    }
 }
