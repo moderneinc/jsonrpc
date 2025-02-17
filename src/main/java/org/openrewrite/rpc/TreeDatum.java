@@ -82,6 +82,7 @@ public class TreeDatum {
         NO_CHANGE,
         ADD,
         DELETE,
-        CHANGE
+        CHANGE,
+        END_OF_TREE
     }
 }

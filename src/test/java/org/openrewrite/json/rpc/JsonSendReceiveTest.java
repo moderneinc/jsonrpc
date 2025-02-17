@@ -62,7 +62,7 @@ public class JsonSendReceiveTest implements RewriteTest {
                 stopAfterPreVisit();
                 return t;
             }
-        })).cycles(1).expectedCyclesThatMakeChanges(1);
+        }));
     }
 
     @Test

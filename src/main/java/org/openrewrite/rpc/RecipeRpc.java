@@ -12,13 +12,11 @@ import org.openrewrite.rpc.request.VisitResponse;
 
 import java.lang.reflect.Constructor;
 import java.time.Duration;
-import java.util.HashMap;
-import java.util.IdentityHashMap;
-import java.util.Map;
-import java.util.UUID;
+import java.util.*;
 import java.util.concurrent.*;
 
 import static io.moderne.jsonrpc.JsonRpcMethod.typed;
+import static org.openrewrite.rpc.TreeDatum.State.END_OF_TREE;
 
 public class RecipeRpc {
     private final JsonRpc jsonRpc;
@@ -39,7 +37,7 @@ public class RecipeRpc {
     private final Map<Integer, Object> remoteRefs = new IdentityHashMap<>();
 
     // TODO This should be keyed on both the visit (transaction) ID in addition to the tree ID
-    private final Map<UUID, BlockingQueue<TreeData>> inProgressGetTreeDatas = new HashMap<>();
+    private final Map<UUID, BlockingQueue<TreeData>> inProgressGetTreeDatas = new ConcurrentHashMap<>();
 
     private static final ExecutorService forkJoin = ForkJoinPool.commonPool();
 
@@ -53,23 +51,17 @@ public class RecipeRpc {
 
             //noinspection unchecked
             TreeVisitor<Tree, Object> visitor = (TreeVisitor<Tree, Object>) ctor.newInstance();
-            try {
-                SourceFile before = getTree(request.getTreeId(), request.getLanguage());
+            SourceFile before = getTree(request.getTreeId(), request.getLanguage());
 
-                // We are now in sync with the remote state of the tree.
-                remoteTrees.put(before.getId(), before);
-                localTrees.put(before.getId(), before);
+            localTrees.put(before.getId(), before);
 
-                SourceFile after = (SourceFile) visitor.visit(before, request.getP());
-                if (after == null) {
-                    localTrees.remove(before.getId());
-                } else {
-                    localTrees.put(after.getId(), after);
-                }
-                return new VisitResponse(before != after);
-            } finally {
-                inProgressGetTreeDatas.remove(request.getTreeId());
+            SourceFile after = (SourceFile) visitor.visit(before, request.getP());
+            if (after == null) {
+                localTrees.remove(before.getId());
+            } else {
+                localTrees.put(after.getId(), after);
             }
+            return new VisitResponse(before != after);
         }));
 
         jsonRpc.method("getTree", typed(GetTreeDataRequest.class, request -> {
@@ -82,20 +74,28 @@ public class RecipeRpc {
                         SourceFile after = localTrees.get(id);
                         sendQueue.send(after, before, () -> Language.fromSourceFile(after)
                                 .getSender().visit(after, sendQueue));
-                        sendQueue.flush();
 
-                        // The remote has finished pulling this tree, so update our understanding
-                        // of the remote state of this tree.
+                        // All the data has been sent, and the remote should have received
+                        // the full tree, so update our understanding of the remote state
+                        // of this tree.
                         remoteTrees.put(id, after);
-                    } catch (Throwable t) {
-                        // TODO what to do here?
-                        t.printStackTrace();
+                    } catch (Throwable ignored) {
+                        // TODO do something with this exception
+                    } finally {
+                        sendQueue.put(new TreeDatum(END_OF_TREE, null, null, null));
+                        sendQueue.flush();
                     }
                     return 0;
                 });
                 return batch;
             });
-            return q.take();
+
+            TreeData batch = q.take();
+            List<TreeDatum> data = batch.getData();
+            if (data.get(data.size() - 1).getState() == END_OF_TREE) {
+                inProgressGetTreeDatas.remove(request.getTreeId());
+            }
+            return batch;
         }));
         jsonRpc.bind();
     }
@@ -123,8 +123,14 @@ public class RecipeRpc {
     private SourceFile getTree(UUID treeId, Language language) {
         TreeDataReceiveQueue q = new TreeDataReceiveQueue(remoteRefs, () -> send("getTree",
                 new GetTreeDataRequest(treeId), TreeData.class));
-        return q.receive(localTrees.get(treeId), before -> (SourceFile) language
+        SourceFile remoteTree = q.receive(localTrees.get(treeId), before -> (SourceFile) language
                 .getReceiver().visit(before, q));
+        if (!q.take().getState().equals(END_OF_TREE)) {
+            throw new IllegalStateException("Expected END_OF_TREE");
+        }
+        // We are now in sync with the remote state of the tree.
+        remoteTrees.put(treeId, remoteTree);
+        return remoteTree;
     }
 
     private <P> P send(String method, RecipeRpcRequest body, Class<P> responseType) {
