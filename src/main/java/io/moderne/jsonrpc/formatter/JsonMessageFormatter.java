@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
@@ -32,7 +33,7 @@ import java.util.Map;
 
 public class JsonMessageFormatter implements MessageFormatter {
     ObjectMapper mapper = new ObjectMapper()
-            .registerModule(new ParameterNamesModule())
+            .registerModules(new ParameterNamesModule(), new JavaTimeModule())
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     public JsonMessageFormatter() {
