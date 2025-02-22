@@ -17,6 +17,7 @@ package io.moderne.jsonrpc;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import io.moderne.jsonrpc.internal.SnowflakeId;
 import lombok.EqualsAndHashCode;
 import lombok.RequiredArgsConstructor;
@@ -27,7 +28,8 @@ import java.util.*;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcRequest extends JsonRpcMessage {
-    private static final ObjectMapper mapper = new ObjectMapper();
+    private static final ObjectMapper mapper = new ObjectMapper()
+            .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
 
     String id;
     String method;
