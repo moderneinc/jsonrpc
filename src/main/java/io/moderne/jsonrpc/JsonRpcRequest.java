@@ -15,22 +15,13 @@
  */
 package io.moderne.jsonrpc;
 
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.SerializationFeature;
 import io.moderne.jsonrpc.internal.SnowflakeId;
 import lombok.EqualsAndHashCode;
-import lombok.RequiredArgsConstructor;
 import lombok.Value;
-
-import java.util.*;
 
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcRequest extends JsonRpcMessage {
-    private static final ObjectMapper mapper = new ObjectMapper()
-            .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS);
-
     String id;
     String method;
 
@@ -39,58 +30,7 @@ public class JsonRpcRequest extends JsonRpcMessage {
      */
     Object params;
 
-    public static Builder newRequest(String method) {
-        return new Builder(method);
-    }
-
-    @RequiredArgsConstructor
-    public static class Builder {
-        private final String method;
-        private String id = SnowflakeId.generateId();
-
-        private final Map<String, Object> namedParameters = new LinkedHashMap<>();
-        private List<Object> positionalParameters;
-
-        public Builder id(Number id) {
-            return id(id.toString());
-        }
-
-        public Builder id(String id) {
-            this.id = id;
-            return this;
-        }
-
-        public Builder namedParameters(Object o) {
-            return namedParameters(mapper.convertValue(o, new TypeReference<Map<String, Object>>() {
-            }));
-        }
-
-        public Builder namedParameters(Map<String, Object> params) {
-            if (positionalParameters != null) {
-                throw new IllegalStateException("Cannot mix named and positional parameters");
-            }
-            this.namedParameters.putAll(params);
-            return this;
-        }
-
-        @SafeVarargs
-        public final <P> Builder positionalParameters(P... params) {
-            List<Object> list = new ArrayList<>(params.length);
-            Collections.addAll(list, params);
-            return positionalParameters(list);
-        }
-
-        public Builder positionalParameters(List<Object> params) {
-            if (!namedParameters.isEmpty()) {
-                throw new IllegalStateException("Cannot mix named and positional parameters");
-            }
-            positionalParameters = params;
-            return this;
-        }
-
-        public JsonRpcRequest build() {
-            return new JsonRpcRequest(id, method,
-                    positionalParameters == null ? namedParameters : positionalParameters);
-        }
+    public static JsonRpcRequest newRequest(String method, Object params) {
+        return new JsonRpcRequest(SnowflakeId.generateId(), method, params);
     }
 }

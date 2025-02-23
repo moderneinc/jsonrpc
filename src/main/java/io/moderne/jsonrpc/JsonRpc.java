@@ -26,19 +26,14 @@ public class JsonRpc {
     private final ForkJoinPool forkJoin = new ForkJoinPool(
             4, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true);
 
-    private final Map<String, JsonRpcMethod> methods = new ConcurrentHashMap<>();
+    private final Map<String, JsonRpcMethod<?>> methods = new ConcurrentHashMap<>();
 
     private volatile boolean shutdown = false;
 
     private final MessageHandler messageHandler;
     private final Map<String, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
 
-    public <P> JsonRpc handle(String name, NamedParamJsonRpcMethod<P> method) {
-        methods.put(name, method);
-        return this;
-    }
-
-    public <P> JsonRpc handleList(String name, PositionalParamJsonRpcMethod<P> method) {
+    public <P> JsonRpc rpc(String name, JsonRpcMethod<P> method) {
         methods.put(name, method);
         return this;
     }
@@ -50,7 +45,7 @@ public class JsonRpc {
         return response;
     }
 
-    public void notification(JsonRpcRequest request) {
+    public void notify(JsonRpcRequest request) {
         messageHandler.send(request);
     }
 
@@ -77,13 +72,13 @@ public class JsonRpc {
                         } else if (msg instanceof JsonRpcRequest) {
                             JsonRpcRequest request = (JsonRpcRequest) msg;
                             requestId = request.getId();
-                            JsonRpcMethod method = methods.get(request.getMethod());
+                            JsonRpcMethod<?> method = methods.get(request.getMethod());
                             if (method == null) {
                                 messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()));
                             } else {
                                 ForkJoinTask.adapt(() -> {
                                     try {
-                                        Object response = method.handle(request.getParams());
+                                        Object response = method.convertAndHandle(request.getParams());
                                         if (response != null) {
                                             messageHandler.send(new JsonRpcSuccess(request.getId(), response));
                                         } else {

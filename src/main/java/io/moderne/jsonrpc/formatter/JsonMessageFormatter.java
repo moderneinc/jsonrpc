@@ -32,16 +32,21 @@ import java.io.OutputStream;
 import java.util.Map;
 
 public class JsonMessageFormatter implements MessageFormatter {
-    ObjectMapper mapper = new ObjectMapper()
-            .registerModules(new ParameterNamesModule(), new JavaTimeModule())
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
+    private final ObjectMapper mapper;
 
     public JsonMessageFormatter() {
+        this(new ObjectMapper()
+                .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL));
         mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()
                 .withCreatorVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
                 .withGetterVisibility(JsonAutoDetect.Visibility.NONE)
                 .withIsGetterVisibility(JsonAutoDetect.Visibility.NONE)
                 .withFieldVisibility(JsonAutoDetect.Visibility.ANY));
+    }
+
+    public JsonMessageFormatter(ObjectMapper mapper) {
+        this.mapper = mapper;
     }
 
     @Override

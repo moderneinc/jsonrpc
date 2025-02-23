@@ -24,17 +24,16 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class JsonRpcTest {
-    AtomicInteger n = new AtomicInteger();
     JsonRpc jsonRpc;
 
     @BeforeEach
@@ -52,31 +51,25 @@ public class JsonRpcTest {
     @Test
     void requestResponse() throws ExecutionException, InterruptedException, TimeoutException {
         JsonRpcSuccess response = jsonRpc
-                .handle("hello", new HelloController())
+                .rpc("hello", new HelloController())
                 .bind()
-                .send(JsonRpcRequest.newRequest("hello")
-                        .id(n.incrementAndGet())
-                        .namedParameters(new Person("Jon"))
-                        .build())
+                .send(JsonRpcRequest.newRequest("hello", new Person("Jon")))
                 .get(5, TimeUnit.SECONDS);
 
         assertThat(response.getResult()).isEqualTo("Hello Jon");
     }
 
     @Test
-    void handleThrowsException() {
+    void rpcThrowsException() {
         assertThatThrownBy(() -> jsonRpc
-                .handle("hello", new NamedParamJsonRpcMethod<Person>() {
+                .rpc("hello", new JsonRpcMethod<Person>() {
                     @Override
-                    protected Object accept(Person params) {
+                    protected Object handle(Person params) {
                         throw new IllegalStateException("Boom");
                     }
                 })
                 .bind()
-                .send(JsonRpcRequest.newRequest("hello")
-                        .id(n.incrementAndGet())
-                        .namedParameters(new Person("Jon"))
-                        .build())
+                .send(JsonRpcRequest.newRequest("hello", new Person("Jon")))
                 .get(5, TimeUnit.SECONDS)
         ).hasCauseInstanceOf(JsonRpcException.class);
     }
@@ -85,32 +78,30 @@ public class JsonRpcTest {
     void notification() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         jsonRpc
-                .handle("hello", new NamedParamJsonRpcMethod<Person>() {
+                .rpc("hello", new JsonRpcMethod<Person>() {
                     @Override
-                    protected Object accept(Person person) {
+                    protected Object handle(Person person) {
                         assertThat(person.name).isEqualTo("Jon");
                         latch.countDown();
                         return null;
                     }
                 })
                 .bind()
-                .notification(JsonRpcRequest.newRequest("hello")
-                        .id(n.incrementAndGet())
-                        .namedParameters(new Person("Jon"))
-                        .build());
+                .notify(JsonRpcRequest.newRequest("hello", new Person("Jon")));
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
     }
 
     @Test
     void positional() throws ExecutionException, InterruptedException, TimeoutException {
         JsonRpcSuccess response = jsonRpc
-                .<String>handleList("hello", names ->
-                        "Hello " + String.join(" and ", names))
+                .rpc("hello", new JsonRpcMethod<List<String>>() {
+                    @Override
+                    protected Object handle(List<String> names) {
+                        return "Hello " + String.join(" and ", names);
+                    }
+                })
                 .bind()
-                .send(JsonRpcRequest.newRequest("hello")
-                        .id(n.incrementAndGet())
-                        .positionalParameters("Jon", "Jim")
-                        .build())
+                .send(JsonRpcRequest.newRequest("hello", List.of("Jon", "Jim")))
                 .get(5, TimeUnit.SECONDS);
 
         assertThat(response.getResult()).isEqualTo("Hello Jon and Jim");
@@ -119,12 +110,9 @@ public class JsonRpcTest {
     @Test
     void positionalRequestMismatchedToNamedParameterMethod() {
         assertThatThrownBy(() -> jsonRpc
-                .handle("hello", new HelloController())
+                .rpc("hello", new HelloController())
                 .bind()
-                .send(JsonRpcRequest.newRequest("hello")
-                        .id(n.incrementAndGet())
-                        .positionalParameters("Jon")
-                        .build())
+                .send(JsonRpcRequest.newRequest("hello", List.of("Jon")))
                 .get(5, TimeUnit.SECONDS)
         ).hasCauseInstanceOf(JsonRpcException.class);
     }
@@ -132,9 +120,9 @@ public class JsonRpcTest {
     record Person(String name) {
     }
 
-    static class HelloController extends NamedParamJsonRpcMethod<Person> {
+    static class HelloController extends JsonRpcMethod<Person> {
         @Override
-        public Object accept(Person person) {
+        public Object handle(Person person) {
             return "Hello " + person.name;
         }
     }
