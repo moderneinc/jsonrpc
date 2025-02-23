@@ -24,7 +24,6 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
-import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -67,8 +66,11 @@ public class JsonRpcTest {
     @Test
     void handleThrowsException() {
         assertThatThrownBy(() -> jsonRpc
-                .<Person>handle("hello", person -> {
-                    throw new IllegalStateException("Boom");
+                .handle("hello", new NamedParamJsonRpcMethod<Person>() {
+                    @Override
+                    protected Object accept(Person params) {
+                        throw new IllegalStateException("Boom");
+                    }
                 })
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
@@ -83,10 +85,13 @@ public class JsonRpcTest {
     void notification() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         jsonRpc
-                .<Person>handle("hello", person -> {
-                    assertThat(person.name).isEqualTo("Jon");
-                    latch.countDown();
-                    return null;
+                .handle("hello", new NamedParamJsonRpcMethod<Person>() {
+                    @Override
+                    protected Object accept(Person person) {
+                        assertThat(person.name).isEqualTo("Jon");
+                        latch.countDown();
+                        return null;
+                    }
                 })
                 .bind()
                 .notification(JsonRpcRequest.newRequest("hello")
@@ -127,7 +132,7 @@ public class JsonRpcTest {
     record Person(String name) {
     }
 
-    static class HelloController implements NamedParamJsonRpcMethod<Person> {
+    static class HelloController extends NamedParamJsonRpcMethod<Person> {
         @Override
         public Object accept(Person person) {
             return "Hello " + person.name;
