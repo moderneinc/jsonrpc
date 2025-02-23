@@ -53,7 +53,7 @@ public class JsonRpcTest {
     @Test
     void requestResponse() throws ExecutionException, InterruptedException, TimeoutException {
         JsonRpcSuccess response = jsonRpc
-                .method("hello", JsonRpcMethod.typed(Person.class, person -> "Hello " + person.name))
+                .handle("hello", new HelloController())
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
@@ -65,11 +65,11 @@ public class JsonRpcTest {
     }
 
     @Test
-    void methodThrowsException() {
+    void handleThrowsException() {
         assertThatThrownBy(() -> jsonRpc
-                .method("hello", JsonRpcMethod.typed(Person.class, person -> {
+                .<Person>handle("hello", person -> {
                     throw new IllegalStateException("Boom");
-                }))
+                })
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
@@ -83,15 +83,15 @@ public class JsonRpcTest {
     void notification() throws InterruptedException {
         CountDownLatch latch = new CountDownLatch(1);
         jsonRpc
-                .method("hello", JsonRpcMethod.typed(Person.class, person -> {
+                .<Person>handle("hello", person -> {
                     assertThat(person.name).isEqualTo("Jon");
                     latch.countDown();
                     return null;
-                }))
+                })
                 .bind()
                 .notification(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
-                        .namedParameter("name", "Jon")
+                        .namedParameters(new Person("Jon"))
                         .build());
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
     }
@@ -99,7 +99,8 @@ public class JsonRpcTest {
     @Test
     void positional() throws ExecutionException, InterruptedException, TimeoutException {
         JsonRpcSuccess response = jsonRpc
-                .method("hello", JsonRpcMethod.positional((List<String> names) -> "Hello " + String.join(" and ", names)))
+                .<String>handleList("hello", names ->
+                        "Hello " + String.join(" and ", names))
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
@@ -113,7 +114,7 @@ public class JsonRpcTest {
     @Test
     void positionalRequestMismatchedToNamedParameterMethod() {
         assertThatThrownBy(() -> jsonRpc
-                .method("hello", JsonRpcMethod.typed(Person.class, person -> "Hello " + person.name))
+                .handle("hello", new HelloController())
                 .bind()
                 .send(JsonRpcRequest.newRequest("hello")
                         .id(n.incrementAndGet())
@@ -124,5 +125,12 @@ public class JsonRpcTest {
     }
 
     record Person(String name) {
+    }
+
+    static class HelloController implements NamedParamJsonRpcMethod<Person> {
+        @Override
+        public Object accept(Person person) {
+            return "Hello " + person.name;
+        }
     }
 }

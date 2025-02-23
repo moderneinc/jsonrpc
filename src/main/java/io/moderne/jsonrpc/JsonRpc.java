@@ -33,7 +33,12 @@ public class JsonRpc {
     private final MessageHandler messageHandler;
     private final Map<String, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
 
-    public JsonRpc method(String name, JsonRpcMethod method) {
+    public <P> JsonRpc handle(String name, NamedParamJsonRpcMethod<P> method) {
+        methods.put(name, method);
+        return this;
+    }
+
+    public <P> JsonRpc handleList(String name, PositionalParamJsonRpcMethod<P> method) {
         methods.put(name, method);
         return this;
     }

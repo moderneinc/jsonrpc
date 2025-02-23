@@ -60,14 +60,6 @@ public class JsonRpcRequest extends JsonRpcMessage {
             return this;
         }
 
-        public Builder namedParameter(String name, Object value) {
-            if (positionalParameters != null) {
-                throw new IllegalStateException("Cannot mix named and positional parameters");
-            }
-            namedParameters.put(name, value);
-            return this;
-        }
-
         public Builder namedParameters(Object o) {
             return namedParameters(mapper.convertValue(o, new TypeReference<Map<String, Object>>() {
             }));
