@@ -43,6 +43,9 @@ public abstract class JsonRpcMethod<P> {
     final Object convertAndHandle(Object params) throws Exception {
         Type paramType = ((ParameterizedType) getClass().getGenericSuperclass())
                 .getActualTypeArguments()[0];
+        if (Void.class.equals(paramType)) {
+            return handle(null);
+        }
         JavaType jt = TypeFactory.defaultInstance().constructType(paramType);
         return handle(mapper.convertValue(params, jt));
     }

@@ -18,6 +18,7 @@ package io.moderne.jsonrpc;
 import io.moderne.jsonrpc.internal.SnowflakeId;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
+import org.jspecify.annotations.Nullable;
 
 @Value
 @EqualsAndHashCode(callSuper = false)
@@ -28,9 +29,14 @@ public class JsonRpcRequest extends JsonRpcMessage {
     /**
      * Either a Map of named parameters or a List of positional parameters.
      */
+    @Nullable
     Object params;
 
     public static JsonRpcRequest newRequest(String method, Object params) {
         return new JsonRpcRequest(SnowflakeId.generateId(), method, params);
+    }
+
+    public static JsonRpcRequest newRequest(String method) {
+        return new JsonRpcRequest(SnowflakeId.generateId(), method, null);
     }
 }

@@ -19,6 +19,7 @@ import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import io.moderne.jsonrpc.JsonRpcError;
@@ -37,6 +38,7 @@ public class JsonMessageFormatter implements MessageFormatter {
     public JsonMessageFormatter() {
         this(new ObjectMapper()
                 .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL));
         mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()
                 .withCreatorVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)

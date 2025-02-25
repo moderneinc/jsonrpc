@@ -60,6 +60,22 @@ public class JsonRpcTest {
     }
 
     @Test
+    void noParams() throws ExecutionException, InterruptedException, TimeoutException {
+        JsonRpcSuccess response = jsonRpc
+                .rpc("hello", new JsonRpcMethod<Void>() {
+                    @Override
+                    protected Object handle(Void params) {
+                        return "Hello Jon";
+                    }
+                })
+                .bind()
+                .send(JsonRpcRequest.newRequest("hello"))
+                .get(5, TimeUnit.SECONDS);
+
+        assertThat(response.getResult()).isEqualTo("Hello Jon");
+    }
+
+    @Test
     void rpcThrowsException() {
         assertThatThrownBy(() -> jsonRpc
                 .rpc("hello", new JsonRpcMethod<Person>() {
