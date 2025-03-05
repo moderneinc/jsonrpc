@@ -13,11 +13,6 @@ dependencies {
 
     compileOnly("io.micrometer:micrometer-core:latest.release")
     implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:2.17.+")
-
-    implementation("org.openrewrite:rewrite-properties:latest.release")
-    implementation("org.openrewrite:rewrite-json:latest.release")
-
-    testImplementation("org.openrewrite:rewrite-test:latest.release")
 }
 
 nexusPublishing {
