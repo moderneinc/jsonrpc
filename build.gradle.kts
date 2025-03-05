@@ -11,6 +11,9 @@ dependencies {
     // rev Jackson elsewhere
 //    implementation("org.msgpack:jackson-dataformat-msgpack:latest.release")
 
+    api("org.jspecify:jspecify:latest.release")
+
+    implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     compileOnly("io.micrometer:micrometer-core:latest.release")
     implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:2.17.+")
 }
