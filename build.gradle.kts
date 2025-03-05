@@ -25,3 +25,7 @@ nexusPublishing {
         snapshotRepositoryUrl.set(uri("https://s01.oss.sonatype.org/content/repositories/snapshots/"))
     }
 }
+
+tasks.named("test") {
+    dependsOn("jar")
+}
