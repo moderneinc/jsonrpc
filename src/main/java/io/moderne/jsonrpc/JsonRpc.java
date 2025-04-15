@@ -31,7 +31,7 @@ public class JsonRpc {
     private volatile boolean shutdown = false;
 
     private final MessageHandler messageHandler;
-    private final Map<String, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
+    private final Map<Long, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
 
     public <P> JsonRpc rpc(String name, JsonRpcMethod<P> method) {
         methods.put(name, method);
@@ -55,12 +55,12 @@ public class JsonRpc {
             @Override
             protected void compute() {
                 while (!shutdown) {
-                    String requestId = null;
+                    Long requestId = null;
                     try {
                         JsonRpcMessage msg = messageHandler.receive();
                         if (msg instanceof JsonRpcResponse) {
                             JsonRpcResponse response = (JsonRpcResponse) msg;
-                            String id = response.getId();
+                            Long id = response.getId();
                             if (id != null) {
                                 CompletableFuture<JsonRpcSuccess> responseFuture = openRequests.remove(id);
                                 if (response instanceof JsonRpcError) {

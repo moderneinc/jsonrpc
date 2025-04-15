@@ -37,7 +37,7 @@ public class SnowflakeId {
     /**
      * @return A short, unique ID produced in a similar way as Twitter's Snowflake ID
      */
-    public static synchronized String generateId() {
+    public static synchronized long generateId() {
         long currentTimestamp = System.currentTimeMillis() - EPOCH;
 
         if (currentTimestamp == lastTimestamp.get()) {
@@ -55,7 +55,11 @@ public class SnowflakeId {
 
         lastTimestamp.set(currentTimestamp);
 
-        return encodeBase62((currentTimestamp << TIMESTAMP_SHIFT) | (MACHINE_ID << MACHINE_ID_SHIFT) | sequence.get());
+        return (currentTimestamp << TIMESTAMP_SHIFT) | (MACHINE_ID << MACHINE_ID_SHIFT) | sequence.get();
+    }
+
+    public static synchronized String generateIdAsString() {
+        return encodeBase62(generateId());
     }
 
     private static final String BASE62_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

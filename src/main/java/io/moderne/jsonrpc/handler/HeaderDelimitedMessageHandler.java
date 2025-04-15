@@ -93,6 +93,8 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
         while ((c = inputStream.read()) != -1) {
             if (c == '\n') {
                 break;
+            } else if (c == '\r') {
+                continue;
             }
             sb.append((char) c);
         }
@@ -105,10 +107,11 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             formatter.serialize(msg, bos);
             byte[] content = bos.toByteArray();
-            outputStream.write(("Content-Length: " + content.length + "\n").getBytes());
+            outputStream.write(("Content-Length: " + content.length + "\r\n").getBytes());
             if (formatter.getEncoding() != StandardCharsets.UTF_8) {
-                outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + formatter.getEncoding().name() + "\n").getBytes());
+                outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + formatter.getEncoding().name() + "\r\n").getBytes());
             }
+            outputStream.write('\r');
             outputStream.write('\n');
             outputStream.write(content);
             outputStream.flush();

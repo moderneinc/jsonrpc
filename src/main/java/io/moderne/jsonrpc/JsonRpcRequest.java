@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcRequest extends JsonRpcMessage {
-    String id;
+    Long id;
     String method;
 
     /**

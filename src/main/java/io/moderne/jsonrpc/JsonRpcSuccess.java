@@ -38,7 +38,7 @@ public class JsonRpcSuccess extends JsonRpcResponse {
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-    String id;
+    Long id;
 
     /**
      * No need for polymorphic deserialization here, since the result type will
