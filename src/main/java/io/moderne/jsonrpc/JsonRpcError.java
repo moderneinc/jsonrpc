@@ -25,7 +25,7 @@ import java.io.StringWriter;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcError extends JsonRpcResponse {
-    Long id;
+    String id;
     Detail error;
 
     @Value
@@ -37,27 +37,27 @@ public class JsonRpcError extends JsonRpcResponse {
         String data;
     }
 
-    public static JsonRpcError parseError(Long id) {
+    public static JsonRpcError parseError(String id) {
         return new JsonRpcError(id, new Detail(-32700, "Parse error", null));
     }
 
-    public static JsonRpcError invalidRequest(Long id, String message) {
+    public static JsonRpcError invalidRequest(String id, String message) {
         return new JsonRpcError(id, new Detail(-32600, "Invalid Request: " + message, null));
     }
 
-    public static JsonRpcError methodNotFound(Long id, String method) {
+    public static JsonRpcError methodNotFound(String id, String method) {
         return new JsonRpcError(id, new Detail(-32601, "Method not found: " + method, null));
     }
 
-    public static JsonRpcError invalidParams(Long id) {
+    public static JsonRpcError invalidParams(String id) {
         return new JsonRpcError(id, new Detail(-32602, "Invalid params", null));
     }
 
-    public static JsonRpcError internalError(Long id, String message) {
+    public static JsonRpcError internalError(String id, String message) {
         return new JsonRpcError(id, new Detail(-32603, "Internal error: " + message, null));
     }
 
-    public static JsonRpcError internalError(Long id, Throwable t) {
+    public static JsonRpcError internalError(String id, Throwable t) {
         StringWriter sw = new StringWriter();
         t.printStackTrace(new PrintWriter(sw));
         return new JsonRpcError(id, new Detail(-32603, "Internal error: " + t.getMessage(), sw.toString()));

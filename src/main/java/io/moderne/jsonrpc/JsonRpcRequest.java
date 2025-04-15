@@ -23,7 +23,7 @@ import org.jspecify.annotations.Nullable;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcRequest extends JsonRpcMessage {
-    Long id;
+    String id;
     String method;
 
     /**
@@ -33,10 +33,10 @@ public class JsonRpcRequest extends JsonRpcMessage {
     Object params;
 
     public static JsonRpcRequest newRequest(String method, Object params) {
-        return new JsonRpcRequest(SnowflakeId.generateId(), method, params);
+        return new JsonRpcRequest(SnowflakeId.generateIdAsString(), method, params);
     }
 
     public static JsonRpcRequest newRequest(String method) {
-        return new JsonRpcRequest(SnowflakeId.generateId(), method, null);
+        return new JsonRpcRequest(SnowflakeId.generateIdAsString(), method, null);
     }
 }
