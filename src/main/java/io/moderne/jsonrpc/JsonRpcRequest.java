@@ -33,10 +33,10 @@ public class JsonRpcRequest extends JsonRpcMessage {
     Object params;
 
     public static JsonRpcRequest newRequest(String method, Object params) {
-        return new JsonRpcRequest(SnowflakeId.generateIdAsString(), method, params);
+        return new JsonRpcRequest(SnowflakeId.generateId(), method, params);
     }
 
     public static JsonRpcRequest newRequest(String method) {
-        return new JsonRpcRequest(SnowflakeId.generateIdAsString(), method, null);
+        return new JsonRpcRequest(SnowflakeId.generateId(), method, null);
     }
 }
