@@ -18,6 +18,7 @@ package io.moderne.jsonrpc;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -38,7 +39,11 @@ public class JsonRpcSuccess extends JsonRpcResponse {
             .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
             .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-    String id;
+    /**
+     * String or Integer
+     */
+    @JsonDeserialize(using = JsonRpcIdDeserializer.class)
+    Object id;
 
     /**
      * No need for polymorphic deserialization here, since the result type will

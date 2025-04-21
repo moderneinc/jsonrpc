@@ -15,6 +15,7 @@
  */
 package io.moderne.jsonrpc;
 
+import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import io.moderne.jsonrpc.internal.SnowflakeId;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
@@ -23,7 +24,9 @@ import org.jspecify.annotations.Nullable;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcRequest extends JsonRpcMessage {
-    String id;
+    @JsonDeserialize(using = JsonRpcIdDeserializer.class)
+    Object id;
+
     String method;
 
     /**
