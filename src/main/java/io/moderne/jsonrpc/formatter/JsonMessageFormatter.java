@@ -47,6 +47,19 @@ public class JsonMessageFormatter implements MessageFormatter {
                 .withFieldVisibility(JsonAutoDetect.Visibility.ANY));
     }
 
+    public JsonMessageFormatter(com.fasterxml.jackson.databind.Module... modules) {
+        this(new ObjectMapper()
+                .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+                .registerModules(modules)
+                .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
+                .setSerializationInclusion(JsonInclude.Include.NON_NULL));
+        mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()
+                .withCreatorVisibility(JsonAutoDetect.Visibility.PUBLIC_ONLY)
+                .withGetterVisibility(JsonAutoDetect.Visibility.NONE)
+                .withIsGetterVisibility(JsonAutoDetect.Visibility.NONE)
+                .withFieldVisibility(JsonAutoDetect.Visibility.ANY));
+    }
+
     public JsonMessageFormatter(ObjectMapper mapper) {
         this.mapper = mapper;
     }
