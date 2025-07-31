@@ -28,7 +28,7 @@ public class JsonRpc {
 
     private final Map<String, JsonRpcMethod<?>> methods = new ConcurrentHashMap<>();
 
-    private volatile boolean shutdown = false;
+    private volatile boolean shutdown;
 
     private final MessageHandler messageHandler;
     private final Map<Object, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
