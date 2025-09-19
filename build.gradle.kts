@@ -15,7 +15,7 @@ dependencies {
 
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     compileOnly("io.micrometer:micrometer-core:latest.release")
-    implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:2.17.+")
+    implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:2.17.2")
     testImplementation("org.openrewrite:rewrite-test:latest.release")
 }
 
