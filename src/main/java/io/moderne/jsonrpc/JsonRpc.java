@@ -101,6 +101,6 @@ public class JsonRpc {
 
     public void shutdown() {
         shutdown = true;
-        forkJoin.shutdown();
+        forkJoin.shutdownNow();
     }
 }
