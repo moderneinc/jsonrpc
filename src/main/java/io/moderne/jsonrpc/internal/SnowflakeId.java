@@ -17,7 +17,7 @@ package io.moderne.jsonrpc.internal;
 
 import java.util.concurrent.atomic.AtomicLong;
 
-public class SnowflakeId {
+public final class SnowflakeId {
     private static final long EPOCH = 1640995200000L; // Custom epoch
     private static final long MACHINE_ID = 1L; // Unique machine ID (0-1023)
 
