@@ -15,56 +15,44 @@
  */
 package io.moderne.jsonrpc;
 
-import com.fasterxml.jackson.annotation.JsonCreator;
-import com.fasterxml.jackson.annotation.JsonIgnore;
-import com.fasterxml.jackson.annotation.JsonProperty;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.databind.DeserializationFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import io.moderne.jsonrpc.formatter.MessageFormatter;
-import lombok.*;
+import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
+import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
+import lombok.EqualsAndHashCode;
+import lombok.Value;
 import org.jspecify.annotations.Nullable;
 
+@Value
 @EqualsAndHashCode(callSuper = false)
-@ToString
 public class JsonRpcSuccess extends JsonRpcResponse {
+    private static final ObjectMapper mapper = JsonMapper.builder()
+            // to be able to construct classes that have @Data and a single field
+            // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
+            .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
+            .build()
+            .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
+            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
     /**
      * String or Integer
      */
     @JsonDeserialize(using = JsonRpcIdDeserializer.class)
-    @Getter
-    private final Object id;
+    Object id;
 
     /**
      * No need for polymorphic deserialization here, since the result type will
      * always be known by the requester.
      */
-    @Getter
     @Nullable
-    private final Object result;
-
-    @JsonCreator
-    public JsonRpcSuccess(
-            @JsonProperty("id") Object id,
-            @JsonProperty("result") @Nullable Object result) {
-        this.id = id;
-        this.result = result;
-    }
-
-    /**
-     * The formatter to use for converting results.
-     * -- SETTER --
-     *  Sets the formatter to use for result conversion.
-     *  This is called by MessageFormatter after deserialization.
-     */
-    @Setter
-    @JsonIgnore
-    @EqualsAndHashCode.Exclude
-    @ToString.Exclude
-    @Nullable
-    private transient MessageFormatter formatter;
+    Object result;
 
     public <V> V getResult(Class<V> resultType) {
-        assert formatter != null;
-        return formatter.convertValue(result, resultType);
+        return mapper.convertValue(result, resultType);
     }
 }

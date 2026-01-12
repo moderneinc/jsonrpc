@@ -15,7 +15,6 @@
  */
 package io.moderne.jsonrpc;
 
-import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.MessageHandler;
 import lombok.RequiredArgsConstructor;
 
@@ -32,7 +31,6 @@ public class JsonRpc {
     private volatile boolean shutdown = false;
 
     private final MessageHandler messageHandler;
-    private final MessageFormatter formatter;
     private final Map<Object, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
 
     public <P> JsonRpc rpc(String name, JsonRpcMethod<P> method) {
@@ -80,7 +78,7 @@ public class JsonRpc {
                             } else {
                                 ForkJoinTask.adapt(() -> {
                                     try {
-                                        Object response = method.convertAndHandle(request.getParams(), formatter);
+                                        Object response = method.convertAndHandle(request.getParams());
                                         if (response != null) {
                                             messageHandler.send(new JsonRpcSuccess(request.getId(), response));
                                         } else {
