@@ -77,7 +77,8 @@ public class JsonMessageFormatter implements MessageFormatter {
 
     @Override
     public JsonRpcMessage deserialize(InputStream in) throws IOException {
-        Map<String, Object> payload = mapper.readValue(in, new TypeReference<Map<String, Object>>() {});
+        Map<String, Object> payload = mapper.readValue(in, new TypeReference<Map<String, Object>>() {
+        });
         if (payload.containsKey("method")) {
             return mapper.convertValue(payload, JsonRpcRequest.class);
         } else if (payload.containsKey("error")) {
