@@ -20,6 +20,8 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
+import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import io.moderne.jsonrpc.JsonRpcError;
@@ -30,13 +32,18 @@ import io.moderne.jsonrpc.JsonRpcSuccess;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Type;
 import java.util.Map;
 
 public class JsonMessageFormatter implements MessageFormatter {
     private final ObjectMapper mapper;
 
     public JsonMessageFormatter() {
-        this(new ObjectMapper()
+        this(JsonMapper.builder()
+                // to be able to construct classes that have @Data and a single field
+                // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
+                .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
+                .build()
                 .registerModules(new ParameterNamesModule(), new JavaTimeModule())
                 .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL));
@@ -48,7 +55,11 @@ public class JsonMessageFormatter implements MessageFormatter {
     }
 
     public JsonMessageFormatter(com.fasterxml.jackson.databind.Module... modules) {
-        this(new ObjectMapper()
+        this(JsonMapper.builder()
+                // to be able to construct classes that have @Data and a single field
+                // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
+                .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
+                .build()
                 .registerModules(new ParameterNamesModule(), new JavaTimeModule())
                 .registerModules(modules)
                 .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
@@ -66,18 +77,26 @@ public class JsonMessageFormatter implements MessageFormatter {
 
     @Override
     public JsonRpcMessage deserialize(InputStream in) throws IOException {
-        Map<String, Object> payload = mapper.readValue(in, new TypeReference<Map<String, Object>>() {
-        });
+        Map<String, Object> payload = mapper.readValue(in, new TypeReference<Map<String, Object>>() {});
         if (payload.containsKey("method")) {
             return mapper.convertValue(payload, JsonRpcRequest.class);
         } else if (payload.containsKey("error")) {
             return mapper.convertValue(payload, JsonRpcError.class);
         }
-        return mapper.convertValue(payload, JsonRpcSuccess.class);
+        Object id = payload.get("id");
+        if (id instanceof Number) {
+            id = ((Number) id).intValue();
+        }
+        return JsonRpcSuccess.fromPayload(id, payload.get("result"), this);
     }
 
     @Override
     public void serialize(JsonRpcMessage message, OutputStream out) throws IOException {
         mapper.writeValue(out, message);
+    }
+
+    @Override
+    public <T> T convertValue(Object value, Type type) {
+        return mapper.convertValue(value, mapper.getTypeFactory().constructType(type));
     }
 }
