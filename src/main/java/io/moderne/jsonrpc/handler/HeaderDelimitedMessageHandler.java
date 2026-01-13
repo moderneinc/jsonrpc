@@ -19,6 +19,7 @@ import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
+import io.moderne.jsonrpc.internal.LimitedInputStream;
 import lombok.RequiredArgsConstructor;
 
 import java.io.*;
@@ -35,6 +36,8 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class HeaderDelimitedMessageHandler implements MessageHandler {
     private static final Pattern CONTENT_LENGTH = Pattern.compile("Content-Length: (\\d+)");
+    private static final ThreadLocal<ByteArrayOutputStream> SEND_BUFFER =
+            ThreadLocal.withInitial(() -> new ByteArrayOutputStream(8192));
 
     private final MessageFormatter formatter;
     private final InputStream inputStream;
@@ -68,20 +71,11 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
                 }
             }
 
-            byte[] content = new byte[Integer.parseInt(contentLengthMatcher.group(1))];
-            for (int totalRead = 0; totalRead < content.length; ) {
-                int bytesRead = inputStream.read(content, totalRead, content.length - totalRead);
-                if (bytesRead == -1) {
-                    // Stream ended unexpectedly before reading full content
-                    return JsonRpcError.invalidRequest(null,
-                            "Content length mismatch. Expected " + content.length +
-                            " but received " + totalRead);
-                }
-                totalRead += bytesRead;
-            }
-
-            ByteArrayInputStream bis = new ByteArrayInputStream(content);
-            return formatter.deserialize(bis);
+            int length = Integer.parseInt(contentLengthMatcher.group(1));
+            LimitedInputStream limited = new LimitedInputStream(inputStream, length);
+            JsonRpcMessage msg = formatter.deserialize(limited);
+            limited.skipRemaining();
+            return msg;
         } catch (IOException e) {
             return JsonRpcError.invalidRequest(null, e.getMessage());
         }
@@ -104,16 +98,16 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     @Override
     public void send(JsonRpcMessage msg) {
         try {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            formatter.serialize(msg, bos);
-            byte[] content = bos.toByteArray();
-            outputStream.write(("Content-Length: " + content.length + "\r\n").getBytes());
+            ByteArrayOutputStream buffer = SEND_BUFFER.get();
+            buffer.reset();
+            formatter.serialize(msg, buffer);
+            outputStream.write(("Content-Length: " + buffer.size() + "\r\n").getBytes());
             if (formatter.getEncoding() != StandardCharsets.UTF_8) {
                 outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + formatter.getEncoding().name() + "\r\n").getBytes());
             }
             outputStream.write('\r');
             outputStream.write('\n');
-            outputStream.write(content);
+            buffer.writeTo(outputStream);
             outputStream.flush();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
