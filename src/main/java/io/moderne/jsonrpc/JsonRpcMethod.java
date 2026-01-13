@@ -15,39 +15,21 @@
  */
 package io.moderne.jsonrpc;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.JavaType;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.databind.type.TypeFactory;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
+import io.moderne.jsonrpc.formatter.MessageFormatter;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 
 @SuppressWarnings("unused")
 public abstract class JsonRpcMethod<P> {
-    private static final ObjectMapper mapper = JsonMapper.builder()
-            // to be able to construct classes that have @Data and a single field
-            // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
-            .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
-            .build()
-            .registerModules(new ParameterNamesModule(), new JavaTimeModule())
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            .disable(DeserializationFeature.FAIL_ON_IGNORED_PROPERTIES)
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-    final Object convertAndHandle(Object params) throws Exception {
+    final Object convertAndHandle(Object params, MessageFormatter formatter) throws Exception {
         Type paramType = ((ParameterizedType) getClass().getGenericSuperclass())
                 .getActualTypeArguments()[0];
         if (Void.class.equals(paramType)) {
             return handle(null);
         }
-        JavaType jt = TypeFactory.defaultInstance().constructType(paramType);
-        return handle(mapper.convertValue(params, jt));
+        return handle(formatter.convertValue(params, paramType));
     }
 
     protected abstract Object handle(P params) throws Exception;

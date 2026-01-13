@@ -15,44 +15,46 @@
  */
 package io.moderne.jsonrpc;
 
-import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.databind.DeserializationFeature;
-import com.fasterxml.jackson.databind.ObjectMapper;
-import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
-import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
-import com.fasterxml.jackson.databind.json.JsonMapper;
-import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
-import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.EqualsAndHashCode;
-import lombok.Value;
+import lombok.Getter;
+import lombok.ToString;
 import org.jspecify.annotations.Nullable;
 
-@Value
 @EqualsAndHashCode(callSuper = false)
+@ToString
 public class JsonRpcSuccess extends JsonRpcResponse {
-    private static final ObjectMapper mapper = JsonMapper.builder()
-            // to be able to construct classes that have @Data and a single field
-            // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
-            .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
-            .build()
-            .registerModules(new ParameterNamesModule(), new JavaTimeModule())
-            .disable(DeserializationFeature.FAIL_ON_UNKNOWN_PROPERTIES)
-            .setSerializationInclusion(JsonInclude.Include.NON_NULL);
 
-    /**
-     * String or Integer
-     */
-    @JsonDeserialize(using = JsonRpcIdDeserializer.class)
-    Object id;
+    @Getter
+    private final Object id;
 
-    /**
-     * No need for polymorphic deserialization here, since the result type will
-     * always be known by the requester.
-     */
+    @Getter
     @Nullable
-    Object result;
+    private final Object result;
+
+    @JsonIgnore
+    @EqualsAndHashCode.Exclude
+    @ToString.Exclude
+    @Nullable
+    private final transient MessageFormatter formatter;
+
+    public JsonRpcSuccess(Object id, @Nullable Object result) {
+        this(id, result, null);
+    }
+
+    private JsonRpcSuccess(Object id, @Nullable Object result, @Nullable MessageFormatter formatter) {
+        this.id = id;
+        this.result = result;
+        this.formatter = formatter;
+    }
+
+    public static JsonRpcSuccess fromPayload(Object id, @Nullable Object result, @Nullable MessageFormatter formatter) {
+        return new JsonRpcSuccess(id, result, formatter);
+    }
 
     public <V> V getResult(Class<V> resultType) {
-        return mapper.convertValue(result, resultType);
+        assert formatter != null;
+        return formatter.convertValue(result, resultType);
     }
 }

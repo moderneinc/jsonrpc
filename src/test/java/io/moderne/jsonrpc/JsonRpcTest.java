@@ -15,6 +15,7 @@
  */
 package io.moderne.jsonrpc;
 
+import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.handler.HeaderDelimitedMessageHandler;
 import io.moderne.jsonrpc.handler.TraceMessageHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -40,7 +41,10 @@ public class JsonRpcTest {
     void before() throws IOException {
         PipedOutputStream os = new PipedOutputStream();
         PipedInputStream is = new PipedInputStream(os);
-        jsonRpc = new JsonRpc(new TraceMessageHandler("both", new HeaderDelimitedMessageHandler(is, os)));
+        JsonMessageFormatter formatter = new JsonMessageFormatter();
+        jsonRpc = new JsonRpc(
+                new TraceMessageHandler("both", new HeaderDelimitedMessageHandler(formatter, is, os)),
+                formatter);
     }
 
     @AfterEach
