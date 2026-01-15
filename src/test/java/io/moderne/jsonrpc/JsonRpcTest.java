@@ -43,7 +43,7 @@ public class JsonRpcTest {
         PipedInputStream is = new PipedInputStream(os);
         JsonMessageFormatter formatter = new JsonMessageFormatter();
         jsonRpc = new JsonRpc(
-                new TraceMessageHandler("both", new HeaderDelimitedMessageHandler(formatter, is, os)),
+                new TraceMessageHandler("both", new HeaderDelimitedMessageHandler(is, os)),
                 formatter);
     }
 

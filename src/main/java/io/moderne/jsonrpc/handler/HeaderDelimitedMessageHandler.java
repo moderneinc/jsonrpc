@@ -17,7 +17,6 @@ package io.moderne.jsonrpc.handler;
 
 import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
-import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
 
@@ -36,18 +35,11 @@ import java.util.regex.Pattern;
 public class HeaderDelimitedMessageHandler implements MessageHandler {
     private static final Pattern CONTENT_LENGTH = Pattern.compile("Content-Length: (\\d+)");
 
-    private final MessageFormatter formatter;
     private final InputStream inputStream;
     private final OutputStream outputStream;
 
-    public HeaderDelimitedMessageHandler(InputStream inputStream, OutputStream outputStream) {
-        this.formatter = new JsonMessageFormatter();
-        this.inputStream = inputStream;
-        this.outputStream = outputStream;
-    }
-
     @Override
-    public JsonRpcMessage receive() {
+    public JsonRpcMessage receive(MessageFormatter formatter) {
         try {
             String contentLength = readLineFromInputStream();
             Matcher contentLengthMatcher = CONTENT_LENGTH.matcher(contentLength);
@@ -102,7 +94,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     }
 
     @Override
-    public void send(JsonRpcMessage msg) {
+    public void send(JsonRpcMessage msg, MessageFormatter formatter) {
         try {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             formatter.serialize(msg, bos);

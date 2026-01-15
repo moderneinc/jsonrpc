@@ -21,6 +21,7 @@ import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.JsonRpcRequest;
 import io.moderne.jsonrpc.JsonRpcSuccess;
+import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
 
 @RequiredArgsConstructor
@@ -29,23 +30,23 @@ public class MeteredMessageHandler implements MessageHandler {
     private final MeterRegistry meterRegistry;
 
     @Override
-    public JsonRpcMessage receive() {
+    public JsonRpcMessage receive(MessageFormatter formatter) {
         Timer.Sample sample = Timer.start(meterRegistry);
         Timer.Builder timer = Timer.builder("jsonrpc.receive")
                 .description("Time taken to receive a JSON-RPC message")
                 .tag("direction", "received");
-        JsonRpcMessage msg = delegate.receive();
+        JsonRpcMessage msg = delegate.receive(formatter);
         finishTimer(msg, sample, timer);
         return msg;
     }
 
     @Override
-    public void send(JsonRpcMessage msg) {
+    public void send(JsonRpcMessage msg, MessageFormatter formatter) {
         Timer.Sample sample = Timer.start(meterRegistry);
         Timer.Builder timer = Timer.builder("jsonrpc.send")
                 .description("Time taken to send a JSON-RPC message")
                 .tag("direction", "sent");
-        delegate.send(msg);
+        delegate.send(msg, formatter);
         finishTimer(msg, sample, timer);
     }
 
