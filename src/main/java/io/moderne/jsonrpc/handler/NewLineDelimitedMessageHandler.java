@@ -15,7 +15,6 @@
  */
 package io.moderne.jsonrpc.handler;
 
-import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
@@ -28,12 +27,11 @@ import java.io.*;
  */
 @RequiredArgsConstructor
 public class NewLineDelimitedMessageHandler implements MessageHandler {
-    private final MessageFormatter formatter = new JsonMessageFormatter();
     private final InputStream inputStream;
     private final OutputStream outputStream;
 
     @Override
-    public JsonRpcMessage receive() {
+    public JsonRpcMessage receive(MessageFormatter formatter) {
         try {
             ByteArrayOutputStream buffer = new ByteArrayOutputStream();
             int b;
@@ -50,7 +48,7 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
     }
 
     @Override
-    public void send(JsonRpcMessage msg) {
+    public void send(JsonRpcMessage msg, MessageFormatter formatter) {
         try {
             formatter.serialize(msg, outputStream);
             outputStream.write(new byte[]{'\n'});

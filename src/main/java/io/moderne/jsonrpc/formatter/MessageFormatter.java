@@ -20,6 +20,7 @@ import io.moderne.jsonrpc.JsonRpcMessage;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 
@@ -27,6 +28,11 @@ public interface MessageFormatter {
     JsonRpcMessage deserialize(InputStream in) throws IOException;
 
     void serialize(JsonRpcMessage message, OutputStream out) throws IOException;
+
+    /**
+     * Converts a value (typically from JSON-RPC params or result) to the specified type.
+     */
+    <T> T convertValue(Object value, Type type);
 
     default Charset getEncoding() {
         return StandardCharsets.UTF_8;
