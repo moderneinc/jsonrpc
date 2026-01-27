@@ -18,6 +18,7 @@ package io.moderne.jsonrpc.handler;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.JsonRpcRequest;
 import io.moderne.jsonrpc.JsonRpcResponse;
+import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
 
 import java.io.PrintStream;
@@ -33,8 +34,8 @@ public class TraceMessageHandler implements MessageHandler {
     }
 
     @Override
-    public JsonRpcMessage receive() {
-        JsonRpcMessage message = delegate.receive();
+    public JsonRpcMessage receive(MessageFormatter formatter) {
+        JsonRpcMessage message = delegate.receive(formatter);
         if (message instanceof JsonRpcResponse) {
             out.printf("<-(%s)- %s%n", name, message);
         }
@@ -42,10 +43,10 @@ public class TraceMessageHandler implements MessageHandler {
     }
 
     @Override
-    public void send(JsonRpcMessage message) {
+    public void send(JsonRpcMessage message, MessageFormatter formatter) {
         if (message instanceof JsonRpcRequest) {
             out.printf("-(%s)-> %s%n", name, message);
         }
-        delegate.send(message);
+        delegate.send(message, formatter);
     }
 }
