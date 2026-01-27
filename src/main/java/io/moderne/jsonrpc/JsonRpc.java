@@ -52,12 +52,12 @@ public class JsonRpc {
     public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
         CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
         openRequests.put(request.getId(), response);
-        messageHandler.send(request);
+        messageHandler.send(request, formatter);
         return response;
     }
 
     public void notify(JsonRpcRequest request) {
-        messageHandler.send(request);
+        messageHandler.send(request, formatter);
     }
 
     public JsonRpc bind() {
@@ -68,7 +68,7 @@ public class JsonRpc {
                 while (!shutdown) {
                     Object requestId = null;
                     try {
-                        JsonRpcMessage msg = messageHandler.receive();
+                        JsonRpcMessage msg = messageHandler.receive(formatter);
                         if (msg instanceof JsonRpcResponse) {
                             JsonRpcResponse response = (JsonRpcResponse) msg;
                             Object id = response.getId();
@@ -85,24 +85,24 @@ public class JsonRpc {
                             requestId = request.getId();
                             JsonRpcMethod<?> method = methods.get(request.getMethod());
                             if (method == null) {
-                                messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()));
+                                messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()), formatter);
                             } else {
                                 ForkJoinTask.adapt(() -> {
                                     try {
                                         Object response = method.convertAndHandle(request.getParams(), formatter);
                                         if (response != null) {
-                                            messageHandler.send(new JsonRpcSuccess(request.getId(), response));
+                                            messageHandler.send(new JsonRpcSuccess(request.getId(), response), formatter);
                                         } else {
-                                            messageHandler.send(JsonRpcError.internalError(request.getId(), "Method returned null"));
+                                            messageHandler.send(JsonRpcError.internalError(request.getId(), "Method returned null"), formatter);
                                         }
                                     } catch (Exception e) {
-                                        messageHandler.send(JsonRpcError.internalError(request.getId(), e));
+                                        messageHandler.send(JsonRpcError.internalError(request.getId(), e), formatter);
                                     }
                                 }).fork();
                             }
                         }
                     } catch (Throwable t) {
-                        messageHandler.send(JsonRpcError.internalError(requestId, t));
+                        messageHandler.send(JsonRpcError.internalError(requestId, t), formatter);
                     }
                 }
             }

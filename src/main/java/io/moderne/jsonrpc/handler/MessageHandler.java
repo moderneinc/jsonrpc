@@ -16,10 +16,11 @@
 package io.moderne.jsonrpc.handler;
 
 import io.moderne.jsonrpc.JsonRpcMessage;
+import io.moderne.jsonrpc.formatter.MessageFormatter;
 
 public interface MessageHandler {
 
-    JsonRpcMessage receive();
+    JsonRpcMessage receive(MessageFormatter formatter);
 
-    void send(JsonRpcMessage msg);
+    void send(JsonRpcMessage msg, MessageFormatter formatter);
 }
