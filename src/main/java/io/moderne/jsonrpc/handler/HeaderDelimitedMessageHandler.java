@@ -19,6 +19,7 @@ import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 
 import java.io.*;
 import java.nio.charset.StandardCharsets;
@@ -38,8 +39,29 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     private final InputStream inputStream;
     private final OutputStream outputStream;
 
+    /**
+     * Formatter stored for backwards compatibility with deprecated methods.
+     */
+    @Deprecated
+    @SuppressWarnings("DeprecatedIsStillUsed")
+    private @Nullable MessageFormatter formatter;
+
+    /**
+     * @param formatter the formatter to use for serialization/deserialization
+     * @param inputStream the input stream to read messages from
+     * @param outputStream the output stream to write messages to
+     * @deprecated The formatter is now passed to individual receive/send calls.
+     * Use the two-argument constructor instead.
+     */
+    @Deprecated
+    public HeaderDelimitedMessageHandler(MessageFormatter formatter, InputStream inputStream, OutputStream outputStream) {
+        this(inputStream, outputStream);
+        this.formatter = formatter;
+    }
+
     @Override
     public JsonRpcMessage receive(MessageFormatter formatter) {
+        MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         try {
             String contentLength = readLineFromInputStream();
             Matcher contentLengthMatcher = CONTENT_LENGTH.matcher(contentLength);
@@ -73,7 +95,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             }
 
             ByteArrayInputStream bis = new ByteArrayInputStream(content);
-            return formatter.deserialize(bis);
+            return effectiveFormatter.deserialize(bis);
         } catch (IOException e) {
             return JsonRpcError.invalidRequest(null, e.getMessage());
         }
@@ -95,13 +117,14 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
 
     @Override
     public void send(JsonRpcMessage msg, MessageFormatter formatter) {
+        MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         try {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            formatter.serialize(msg, bos);
+            effectiveFormatter.serialize(msg, bos);
             byte[] content = bos.toByteArray();
             outputStream.write(("Content-Length: " + content.length + "\r\n").getBytes());
-            if (formatter.getEncoding() != StandardCharsets.UTF_8) {
-                outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + formatter.getEncoding().name() + "\r\n").getBytes());
+            if (effectiveFormatter.getEncoding() != StandardCharsets.UTF_8) {
+                outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + effectiveFormatter.getEncoding().name() + "\r\n").getBytes());
             }
             outputStream.write('\r');
             outputStream.write('\n');
