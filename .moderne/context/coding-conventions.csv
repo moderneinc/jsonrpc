@@ -1,0 +1,14 @@
+Convention type,Pattern,Example,Frequency,Scope
+comments,Methods have Javadoc documentation,JsonRpc,,project-wide
+naming,Error suffix for classes,JsonRpcError,,project-wide
+naming,parse* method naming pattern,parseError,,project-wide
+naming,Exception suffix for classes,JsonRpcException,,project-wide
+naming,get* method naming pattern,getId,,project-wide
+naming,convert* method naming pattern,convertAndHandle,,project-wide
+comments,Classes have Javadoc documentation,HeaderDelimitedMessageHandler,,project-wide
+naming,Handler suffix for classes,HeaderDelimitedMessageHandler,,project-wide
+naming,UPPER_SNAKE_CASE for constants,CONTENT_LENGTH,,project-wide
+naming,camelCase for constants,lastTimestamp,,project-wide
+imports,Static imports from org.assertj.core.api,org.assertj.core.api.Assertions.assertThat,,project-wide
+naming,Test suffix for classes,JsonRpcTest,,project-wide
+naming,Controller suffix for classes,HelloController,,project-wide

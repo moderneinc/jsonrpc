@@ -1,0 +1,25 @@
+{
+  "nodes" : [ {
+    "uniqueId" : "json-rpc-message-data",
+    "nodeType" : "data-asset",
+    "name" : "JsonRpcMessage",
+    "description" : "DTO json rpc message with fields: jsonrpc"
+  }, {
+    "uniqueId" : "json-rpc-request-data",
+    "nodeType" : "data-asset",
+    "name" : "JsonRpcRequest",
+    "description" : "DTO json rpc request with fields: id, method, params"
+  }, {
+    "uniqueId" : "json-rpc-response-data",
+    "nodeType" : "data-asset",
+    "name" : "JsonRpcResponse",
+    "description" : "DTO json rpc response"
+  }, {
+    "uniqueId" : "person-data",
+    "nodeType" : "data-asset",
+    "name" : "Person",
+    "description" : "Record person with fields: name"
+  } ],
+  "relationships" : [ ],
+  "$schema" : "https://calm.finos.org/draft/2025-03/meta/calm.json"
+}
