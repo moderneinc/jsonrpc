@@ -12,3 +12,7 @@ out/
 IDE.properties
 # ASDF https://asdf-vm.com/
 .tool-versions
+
+# Moderne CLI
+.moderne/*
+!.moderne/context/
