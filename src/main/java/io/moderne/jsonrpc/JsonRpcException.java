@@ -22,8 +22,17 @@ public class JsonRpcException extends Throwable {
     private final JsonRpcError error;
 
     public JsonRpcException(JsonRpcError error) {
-        super("{code=" + error.getError().getCode() +
-              ", message='" + error.getError().getMessage() + "'}");
+        super(formatMessage(error));
         this.error = error;
+    }
+
+    private static String formatMessage(JsonRpcError error) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("{code=").append(error.getError().getCode())
+          .append(", message='").append(error.getError().getMessage()).append("'}");
+        if (error.getError().getData() != null) {
+            sb.append("\nRemote traceback:\n").append(error.getError().getData());
+        }
+        return sb.toString();
     }
 }

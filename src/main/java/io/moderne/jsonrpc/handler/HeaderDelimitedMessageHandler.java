@@ -15,6 +15,9 @@
  */
 package io.moderne.jsonrpc.handler;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
@@ -35,6 +38,7 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class HeaderDelimitedMessageHandler implements MessageHandler {
     private static final Pattern CONTENT_LENGTH = Pattern.compile("Content-Length: (\\d+)");
+    private static final JsonFactory JSON_FACTORY = new JsonFactory();
 
     private final InputStream inputStream;
     private final OutputStream outputStream;
@@ -47,8 +51,8 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     private @Nullable MessageFormatter formatter;
 
     /**
-     * @param formatter the formatter to use for serialization/deserialization
-     * @param inputStream the input stream to read messages from
+     * @param formatter    the formatter to use for serialization/deserialization
+     * @param inputStream  the input stream to read messages from
      * @param outputStream the output stream to write messages to
      * @deprecated The formatter is now passed to individual receive/send calls.
      * Use the two-argument constructor instead.
@@ -62,6 +66,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     @Override
     public JsonRpcMessage receive(MessageFormatter formatter) {
         MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
+        byte[] content = null;
         try {
             String contentLength = readLineFromInputStream();
             Matcher contentLengthMatcher = CONTENT_LENGTH.matcher(contentLength);
@@ -82,14 +87,14 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
                 }
             }
 
-            byte[] content = new byte[Integer.parseInt(contentLengthMatcher.group(1))];
+            content = new byte[Integer.parseInt(contentLengthMatcher.group(1))];
             for (int totalRead = 0; totalRead < content.length; ) {
                 int bytesRead = inputStream.read(content, totalRead, content.length - totalRead);
                 if (bytesRead == -1) {
                     // Stream ended unexpectedly before reading full content
                     return JsonRpcError.invalidRequest(null,
                             "Content length mismatch. Expected " + content.length +
-                            " but received " + totalRead);
+                                    " but received " + totalRead);
                 }
                 totalRead += bytesRead;
             }
@@ -97,8 +102,42 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             ByteArrayInputStream bis = new ByteArrayInputStream(content);
             return effectiveFormatter.deserialize(bis);
         } catch (IOException e) {
-            return JsonRpcError.invalidRequest(null, e.getMessage());
+            return JsonRpcError.invalidRequest(extractId(content), e.getMessage());
         }
+    }
+
+    /**
+     * Try to extract the JSON-RPC "id" field from raw message bytes when full
+     * deserialization has failed. Uses a streaming parser to read only the
+     * top-level "id" field without parsing the rest of the message.
+     */
+    private static @Nullable Object extractId(byte @Nullable [] content) {
+        if (content == null) {
+            return null;
+        }
+        try (JsonParser parser = JSON_FACTORY.createParser(content)) {
+            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                return null;
+            }
+            while (parser.nextToken() != JsonToken.END_OBJECT) {
+                String field = parser.currentName();
+                parser.nextToken();
+                if ("id".equals(field)) {
+                    switch (parser.currentToken()) {
+                        case VALUE_NUMBER_INT:
+                            return parser.getIntValue();
+                        case VALUE_STRING:
+                            return parser.getText();
+                        default:
+                            return null;
+                    }
+                }
+                // Skip over values of other top-level fields without parsing them
+                parser.skipChildren();
+            }
+        } catch (IOException ignored) {
+        }
+        return null;
     }
 
     private String readLineFromInputStream() throws IOException {
