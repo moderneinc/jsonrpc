@@ -79,6 +79,13 @@ public class JsonRpc {
                                 } else if (response instanceof JsonRpcSuccess) {
                                     responseFuture.complete((JsonRpcSuccess) response);
                                 }
+                            } else if (response instanceof JsonRpcError) {
+                                // Error with no id — fail all open requests since we
+                                // can't correlate this error to a specific one
+                                JsonRpcException exception = new JsonRpcException((JsonRpcError) response);
+                                for (CompletableFuture<JsonRpcSuccess> future : openRequests.values()) {
+                                    future.completeExceptionally(exception);
+                                }
                             }
                         } else if (msg instanceof JsonRpcRequest) {
                             JsonRpcRequest request = (JsonRpcRequest) msg;
