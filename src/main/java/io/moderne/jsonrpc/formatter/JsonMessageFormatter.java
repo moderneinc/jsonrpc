@@ -17,11 +17,14 @@ package io.moderne.jsonrpc.formatter;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
-import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.util.TokenBuffer;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import io.moderne.jsonrpc.JsonRpcError;
@@ -33,10 +36,15 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Type;
-import java.util.Map;
 
 public class JsonMessageFormatter implements MessageFormatter {
     private final ObjectMapper mapper;
+    private final ClassValue<ObjectWriter> writerCache = new ClassValue<ObjectWriter>() {
+        @Override
+        protected ObjectWriter computeValue(Class<?> type) {
+            return mapper.writerFor(type);
+        }
+    };
 
     public JsonMessageFormatter() {
         this(JsonMapper.builder()
@@ -77,27 +85,90 @@ public class JsonMessageFormatter implements MessageFormatter {
 
     @Override
     public JsonRpcMessage deserialize(InputStream in) throws IOException {
-        Map<String, Object> payload = mapper.readValue(in, new TypeReference<Map<String, Object>>() {
-        });
-        if (payload.containsKey("method")) {
-            return mapper.convertValue(payload, JsonRpcRequest.class);
-        } else if (payload.containsKey("error")) {
-            return mapper.convertValue(payload, JsonRpcError.class);
+        JsonParser parser = mapper.getFactory().createParser(in);
+
+        Object id = null;
+        String method = null;
+        TokenBuffer params = null;
+        TokenBuffer errorBuffer = null;
+        Object result = null;
+
+        if (parser.nextToken() != JsonToken.START_OBJECT) {
+            return JsonRpcError.invalidRequest(null, "Expected JSON object");
         }
-        Object id = payload.get("id");
+
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            String fieldName = parser.currentName();
+            parser.nextToken();
+
+            switch (fieldName) {
+                case "jsonrpc":
+                    parser.skipChildren();
+                    break;
+                case "id":
+                    id = normalizeId(parser.readValueAs(Object.class));
+                    break;
+                case "method":
+                    method = parser.getValueAsString();
+                    break;
+                case "params":
+                    params = captureValue(parser);
+                    break;
+                case "error":
+                    errorBuffer = captureValue(parser);
+                    break;
+                case "result":
+                    JsonToken token = parser.currentToken();
+                    if (token == JsonToken.START_OBJECT || token == JsonToken.START_ARRAY) {
+                        result = captureValue(parser);
+                    } else {
+                        result = parser.readValueAs(Object.class);
+                    }
+                    break;
+                default:
+                    parser.skipChildren();
+                    break;
+            }
+        }
+
+        if (method != null) {
+            return new JsonRpcRequest(id, method, params);
+        } else if (errorBuffer != null) {
+            JsonRpcError.Detail detail = convertValue(errorBuffer, JsonRpcError.Detail.class);
+            return new JsonRpcError(id, detail);
+        }
+        return JsonRpcSuccess.fromPayload(id, result, this);
+    }
+
+    private TokenBuffer captureValue(JsonParser parser) throws IOException {
+        TokenBuffer buffer = new TokenBuffer(parser);
+        buffer.copyCurrentStructure(parser);
+        return buffer;
+    }
+
+    private Object normalizeId(Object id) {
         if (id instanceof Number) {
-            id = ((Number) id).intValue();
+            return ((Number) id).intValue();
         }
-        return JsonRpcSuccess.fromPayload(id, payload.get("result"), this);
+        return id;
     }
 
     @Override
     public void serialize(JsonRpcMessage message, OutputStream out) throws IOException {
-        mapper.writeValue(out, message);
+        writerCache.get(message.getClass()).writeValue(out, message);
     }
 
     @Override
     public <T> T convertValue(Object value, Type type) {
+        if (value instanceof TokenBuffer) {
+            try {
+                JsonParser bufferParser = ((TokenBuffer) value).asParser();
+                bufferParser.nextToken();
+                return mapper.readValue(bufferParser, mapper.getTypeFactory().constructType(type));
+            } catch (IOException e) {
+                throw new RuntimeException("Failed to convert TokenBuffer", e);
+            }
+        }
         return mapper.convertValue(value, mapper.getTypeFactory().constructType(type));
     }
 }
