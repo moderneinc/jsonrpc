@@ -161,14 +161,18 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             effectiveFormatter.serialize(msg, bos);
             byte[] content = bos.toByteArray();
-            outputStream.write(("Content-Length: " + content.length + "\r\n").getBytes());
-            if (effectiveFormatter.getEncoding() != StandardCharsets.UTF_8) {
-                outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + effectiveFormatter.getEncoding().name() + "\r\n").getBytes());
+            // Synchronize writes so concurrent sends (e.g. from callback handlers
+            // and the main thread) don't interleave headers and content.
+            synchronized (outputStream) {
+                outputStream.write(("Content-Length: " + content.length + "\r\n").getBytes());
+                if (effectiveFormatter.getEncoding() != StandardCharsets.UTF_8) {
+                    outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + effectiveFormatter.getEncoding().name() + "\r\n").getBytes());
+                }
+                outputStream.write('\r');
+                outputStream.write('\n');
+                outputStream.write(content);
+                outputStream.flush();
             }
-            outputStream.write('\r');
-            outputStream.write('\n');
-            outputStream.write(content);
-            outputStream.flush();
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
