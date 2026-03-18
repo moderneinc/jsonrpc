@@ -92,7 +92,13 @@ public class JsonRpc {
                             requestId = request.getId();
                             JsonRpcMethod<?> method = methods.get(request.getMethod());
                             if (method == null) {
-                                messageHandler.send(JsonRpcError.methodNotFound(request.getId(), request.getMethod()), formatter);
+                                // Fork error sends off the reader thread to avoid
+                                // deadlock with synchronized send()
+                                Object errorId = request.getId();
+                                String errorMethod = request.getMethod();
+                                ForkJoinTask.adapt(() ->
+                                        messageHandler.send(JsonRpcError.methodNotFound(errorId, errorMethod), formatter)
+                                ).fork();
                             } else {
                                 ForkJoinTask.adapt(() -> {
                                     try {
@@ -109,7 +115,13 @@ public class JsonRpc {
                             }
                         }
                     } catch (Throwable t) {
-                        messageHandler.send(JsonRpcError.internalError(requestId, t), formatter);
+                        // Fork error sends off the reader thread to avoid
+                        // deadlock with synchronized send()
+                        Object errorReqId = requestId;
+                        Throwable errorT = t;
+                        ForkJoinTask.adapt(() ->
+                                messageHandler.send(JsonRpcError.internalError(errorReqId, errorT), formatter)
+                        ).fork();
                     }
                 }
             }

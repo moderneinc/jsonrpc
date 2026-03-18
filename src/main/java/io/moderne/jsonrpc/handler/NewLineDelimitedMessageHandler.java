@@ -50,9 +50,11 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
     @Override
     public void send(JsonRpcMessage msg, MessageFormatter formatter) {
         try {
-            formatter.serialize(msg, outputStream);
-            outputStream.write(new byte[]{'\n'});
-            outputStream.flush();
+            synchronized (outputStream) {
+                formatter.serialize(msg, outputStream);
+                outputStream.write(new byte[]{'\n'});
+                outputStream.flush();
+            }
         } catch (IOException e) {
             throw new UncheckedIOException(e);
         }
