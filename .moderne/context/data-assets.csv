@@ -1,0 +1,5 @@
+Source path,Class name,Simple name,Asset type,Description,Fields
+src/main/java/io/moderne/jsonrpc/JsonRpcMessage.java,io.moderne.jsonrpc.JsonRpcMessage,JsonRpcMessage,DTO,DTO json rpc message with fields: jsonrpc,jsonrpc
+src/main/java/io/moderne/jsonrpc/JsonRpcRequest.java,io.moderne.jsonrpc.JsonRpcRequest,JsonRpcRequest,DTO,"DTO json rpc request with fields: id, method, params","id, method, params"
+src/main/java/io/moderne/jsonrpc/JsonRpcResponse.java,io.moderne.jsonrpc.JsonRpcResponse,JsonRpcResponse,DTO,DTO json rpc response,
+src/test/java/io/moderne/jsonrpc/JsonRpcTest.java,io.moderne.jsonrpc.JsonRpcTest$Person,Person,Record,Record person with fields: name,name
