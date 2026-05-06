@@ -20,6 +20,7 @@ import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.MessageHandler;
 import lombok.RequiredArgsConstructor;
 
+import java.io.EOFException;
 import java.util.Map;
 import java.util.concurrent.*;
 
@@ -79,9 +80,13 @@ public class JsonRpc {
                                 } else if (response instanceof JsonRpcSuccess) {
                                     responseFuture.complete((JsonRpcSuccess) response);
                                 }
-                            } else if (response instanceof JsonRpcError) {
+                            } else if (response instanceof JsonRpcError && !openRequests.isEmpty()) {
                                 // Error with no id — fail all open requests since we
-                                // can't correlate this error to a specific one
+                                // can't correlate this error to a specific one. Skip
+                                // when there's nothing to fail; allocating a Throwable
+                                // (and filling its stack) per malformed message is
+                                // expensive enough to peg a CPU when an upstream peer
+                                // emits non-RPC noise on the wire.
                                 JsonRpcException exception = new JsonRpcException((JsonRpcError) response);
                                 for (CompletableFuture<JsonRpcSuccess> future : openRequests.values()) {
                                     future.completeExceptionally(exception);
@@ -114,6 +119,17 @@ public class JsonRpc {
                                 }).fork();
                             }
                         }
+                    } catch (EOFException e) {
+                        // Peer closed the stream — there's nothing more to read.
+                        // Fail any in-flight requests once and exit the loop
+                        // instead of spinning on the closed pipe.
+                        JsonRpcException eof = new JsonRpcException(
+                                JsonRpcError.internalError(null, "JSON-RPC peer closed the stream"));
+                        for (CompletableFuture<JsonRpcSuccess> future : openRequests.values()) {
+                            future.completeExceptionally(eof);
+                        }
+                        openRequests.clear();
+                        shutdown = true;
                     } catch (Throwable t) {
                         // Fork error sends off the reader thread to avoid
                         // deadlock with synchronized send()

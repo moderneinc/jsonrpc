@@ -31,20 +31,19 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
     private final OutputStream outputStream;
 
     @Override
-    public JsonRpcMessage receive(MessageFormatter formatter) {
-        try {
-            ByteArrayOutputStream buffer = new ByteArrayOutputStream();
-            int b;
-            while ((b = inputStream.read()) != -1) {
-                buffer.write(b);
-                if (b == '\n') {
-                    break;
-                }
-            }
-            return formatter.deserialize(new ByteArrayInputStream(buffer.toByteArray()));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
+    public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        int b = inputStream.read();
+        if (b == -1) {
+            throw new EOFException("Stream closed");
         }
+        do {
+            buffer.write(b);
+            if (b == '\n') {
+                break;
+            }
+        } while ((b = inputStream.read()) != -1);
+        return formatter.deserialize(new ByteArrayInputStream(buffer.toByteArray()));
     }
 
     @Override

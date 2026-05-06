@@ -22,10 +22,13 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.util.List;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -135,6 +138,30 @@ public class JsonRpcTest {
                 .send(JsonRpcRequest.newRequest("hello", List.of("Jon")))
                 .get(5, TimeUnit.SECONDS)
         ).hasCauseInstanceOf(JsonRpcException.class);
+    }
+
+    @Test
+    void readerLoopExitsCleanlyOnEof() throws Exception {
+        // When the peer closes the stream, the reader loop must shut down
+        // instead of spinning at full CPU constructing JsonRpcException
+        // instances per garbage byte.
+        ByteArrayInputStream closedStream = new ByteArrayInputStream(new byte[0]);
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+        JsonMessageFormatter formatter = new JsonMessageFormatter();
+        JsonRpc localRpc = new JsonRpc(
+                new HeaderDelimitedMessageHandler(closedStream, out),
+                formatter)
+                .bind();
+        try {
+            CompletableFuture<JsonRpcSuccess> inFlight =
+                    localRpc.send(JsonRpcRequest.newRequest("never-arrives"));
+
+            // The in-flight request must fail (not hang) once the loop sees EOF.
+            assertThatThrownBy(() -> inFlight.get(5, TimeUnit.SECONDS))
+                    .hasCauseInstanceOf(JsonRpcException.class);
+        } finally {
+            localRpc.shutdown();
+        }
     }
 
     record Person(String name) {

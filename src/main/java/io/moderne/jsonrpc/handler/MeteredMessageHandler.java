@@ -24,13 +24,15 @@ import io.moderne.jsonrpc.JsonRpcSuccess;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
 
+import java.io.IOException;
+
 @RequiredArgsConstructor
 public class MeteredMessageHandler implements MessageHandler {
     private final MessageHandler delegate;
     private final MeterRegistry meterRegistry;
 
     @Override
-    public JsonRpcMessage receive(MessageFormatter formatter) {
+    public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
         Timer.Sample sample = Timer.start(meterRegistry);
         Timer.Builder timer = Timer.builder("jsonrpc.receive")
                 .description("Time taken to receive a JSON-RPC message")
