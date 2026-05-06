@@ -15,8 +15,7 @@
  */
 package io.moderne.jsonrpc.handler;
 
-import io.moderne.jsonrpc.JsonRpcError;
-import io.moderne.jsonrpc.JsonRpcMessage;
+import io.moderne.jsonrpc.JsonRpcReceiveException;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +24,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.InputStream;
 
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class HeaderDelimitedMessageHandlerTest {
@@ -41,17 +39,17 @@ class HeaderDelimitedMessageHandlerTest {
     }
 
     @Test
-    void receiveStillReturnsInvalidRequestForNonEmptyMalformedHeader() throws Exception {
-        // A non-RPC line on the wire should still produce a recoverable
-        // invalidRequest error (not EOF) so callers can decide what to do.
+    void receiveThrowsForNonEmptyMalformedHeader() {
+        // A non-RPC line on the wire surfaces as JsonRpcReceiveException
+        // (not EOF, not a returned JsonRpcError that JsonRpc.bind would
+        // mistake for a peer response). The caller — JsonRpc.bind — turns
+        // it into an error response sent back to the peer.
         InputStream noise = new ByteArrayInputStream("warning: something\n".getBytes());
         HeaderDelimitedMessageHandler handler = new HeaderDelimitedMessageHandler(noise, new ByteArrayOutputStream());
 
-        JsonRpcMessage msg = handler.receive(FORMATTER);
-
-        assertThat(msg).isInstanceOf(JsonRpcError.class);
-        assertThat(((JsonRpcError) msg).getError().getMessage())
-                .contains("Expected Content-Length header");
+        assertThatThrownBy(() -> handler.receive(FORMATTER))
+                .isInstanceOf(JsonRpcReceiveException.class)
+                .hasMessageContaining("Expected Content-Length header");
     }
 
     @Test

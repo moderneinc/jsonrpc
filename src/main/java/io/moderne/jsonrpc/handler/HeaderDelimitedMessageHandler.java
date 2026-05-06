@@ -15,11 +15,8 @@
  */
 package io.moderne.jsonrpc.handler;
 
-import com.fasterxml.jackson.core.JsonFactory;
-import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.JsonToken;
-import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
+import io.moderne.jsonrpc.JsonRpcReceiveException;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.Nullable;
@@ -38,7 +35,6 @@ import java.util.regex.Pattern;
 @RequiredArgsConstructor
 public class HeaderDelimitedMessageHandler implements MessageHandler {
     private static final Pattern CONTENT_LENGTH = Pattern.compile("Content-Length: (\\d+)");
-    private static final JsonFactory JSON_FACTORY = new JsonFactory();
 
     private final InputStream inputStream;
     private final OutputStream outputStream;
@@ -75,19 +71,20 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             String contentLength = readLineFromInputStream();
             Matcher contentLengthMatcher = CONTENT_LENGTH.matcher(contentLength);
             if (!contentLengthMatcher.matches()) {
-                return JsonRpcError.invalidRequest(null,
-                        "Expected Content-Length header but received '" + contentLength + "'");
+                throw new JsonRpcReceiveException(null, JsonRpcReceiveException.invalidRequestDetail(
+                        "Expected Content-Length header but received '" + contentLength + "'"));
             }
 
             String contentType = readLineFromInputStream();
             if (!contentType.isEmpty()) {
                 if (!contentType.startsWith("Content-Type")) {
-                    return JsonRpcError.invalidRequest(null,
-                            "Expected Content-Type header but received '" + contentType + "'");
+                    throw new JsonRpcReceiveException(null, JsonRpcReceiveException.invalidRequestDetail(
+                            "Expected Content-Type header but received '" + contentType + "'"));
                 }
                 // now the next line should be an empty line
                 if (!readLineFromInputStream().isEmpty()) {
-                    return JsonRpcError.invalidRequest(null, "Expected empty line after headers");
+                    throw new JsonRpcReceiveException(null,
+                            JsonRpcReceiveException.invalidRequestDetail("Expected empty line after headers"));
                 }
             }
 
@@ -106,45 +103,17 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
 
             ByteArrayInputStream bis = new ByteArrayInputStream(content);
             return effectiveFormatter.deserialize(bis);
-        } catch (EOFException e) {
+        } catch (EOFException | JsonRpcReceiveException e) {
             throw e;
         } catch (IOException e) {
-            return JsonRpcError.invalidRequest(extractId(content), e.getMessage());
+            // Frame- or parse-level failure on an inbound message. Surface it
+            // as JsonRpcReceiveException so JsonRpc.bind() routes it back to
+            // the peer rather than completing an unrelated open client future
+            // (whose id might collide with the extracted id, or trigger the
+            // null-id "fail all open requests" branch).
+            throw new JsonRpcReceiveException(IdExtractor.extractId(content),
+                    JsonRpcReceiveException.invalidRequestDetail(e.getMessage()));
         }
-    }
-
-    /**
-     * Try to extract the JSON-RPC "id" field from raw message bytes when full
-     * deserialization has failed. Uses a streaming parser to read only the
-     * top-level "id" field without parsing the rest of the message.
-     */
-    private static @Nullable Object extractId(byte @Nullable [] content) {
-        if (content == null) {
-            return null;
-        }
-        try (JsonParser parser = JSON_FACTORY.createParser(content)) {
-            if (parser.nextToken() != JsonToken.START_OBJECT) {
-                return null;
-            }
-            while (parser.nextToken() != JsonToken.END_OBJECT) {
-                String field = parser.currentName();
-                parser.nextToken();
-                if ("id".equals(field)) {
-                    switch (parser.currentToken()) {
-                        case VALUE_NUMBER_INT:
-                            return parser.getIntValue();
-                        case VALUE_STRING:
-                            return parser.getText();
-                        default:
-                            return null;
-                    }
-                }
-                // Skip over values of other top-level fields without parsing them
-                parser.skipChildren();
-            }
-        } catch (IOException ignored) {
-        }
-        return null;
     }
 
     private String readLineFromInputStream() throws IOException {

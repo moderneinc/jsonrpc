@@ -27,6 +27,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -159,6 +160,55 @@ public class JsonRpcTest {
             // The in-flight request must fail (not hang) once the loop sees EOF.
             assertThatThrownBy(() -> inFlight.get(5, TimeUnit.SECONDS))
                     .hasCauseInstanceOf(JsonRpcException.class);
+        } finally {
+            localRpc.shutdown();
+        }
+    }
+
+    @Test
+    void malformedInboundDoesNotCompleteOpenClientRequests() throws Exception {
+        // Pre-fix bug: HeaderDelimitedMessageHandler returned JsonRpcError for
+        // frame/parse failures. JsonRpc.bind treated every JsonRpcError as a
+        // peer response. A malformed inbound message with no extractable id
+        // hit the "Error with no id — fail all open requests" branch and
+        // completed every open client future exceptionally — even though the
+        // peer never sent us anything correlated to those requests.
+        //
+        // Post-fix: handler throws JsonRpcReceiveException; JsonRpc.bind
+        // routes that to the peer as an error response and leaves
+        // openRequests untouched.
+        PipedOutputStream peerToServer = new PipedOutputStream();
+        PipedInputStream serverIn = new PipedInputStream(peerToServer);
+        ByteArrayOutputStream serverOut = new ByteArrayOutputStream();
+        JsonMessageFormatter formatter = new JsonMessageFormatter();
+        JsonRpc localRpc = new JsonRpc(
+                new HeaderDelimitedMessageHandler(serverIn, serverOut),
+                formatter).bind();
+        try {
+            CompletableFuture<JsonRpcSuccess> open =
+                    localRpc.send(JsonRpcRequest.newRequest("waiting"));
+
+            // 5 ASCII bytes that are not valid JSON. extractId() returns null.
+            byte[] body = "hello".getBytes(StandardCharsets.UTF_8);
+            byte[] frame = ("Content-Length: " + body.length + "\r\n\r\n")
+                    .getBytes(StandardCharsets.UTF_8);
+            peerToServer.write(frame);
+            peerToServer.write(body);
+            peerToServer.flush();
+
+            // Wait for the error response to land in serverOut.
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+            while (System.nanoTime() < deadline &&
+                    !serverOut.toString(StandardCharsets.UTF_8).contains("Invalid Request")) {
+                Thread.sleep(20);
+            }
+
+            assertThat(serverOut.toString(StandardCharsets.UTF_8))
+                    .as("error response sent back to peer for malformed inbound")
+                    .contains("Invalid Request");
+            assertThat(open.isDone())
+                    .as("open client request stays pending — malformed inbound is not a response to it")
+                    .isFalse();
         } finally {
             localRpc.shutdown();
         }

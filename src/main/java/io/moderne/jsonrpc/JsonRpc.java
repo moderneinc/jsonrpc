@@ -130,6 +130,18 @@ public class JsonRpc {
                         }
                         openRequests.clear();
                         shutdown = true;
+                    } catch (JsonRpcReceiveException e) {
+                        // Frame- or parse-level failure on an inbound message.
+                        // Send the error back to the peer; do NOT touch
+                        // openRequests — those track responses we're waiting
+                        // for from the peer, and the peer's malformed message
+                        // is not one of them. Treating it as one would either
+                        // complete an unrelated future on id collision, or
+                        // (worse, on null id) fail every open request at once.
+                        JsonRpcError errorToPeer = e.toError();
+                        ForkJoinTask.adapt(() ->
+                                messageHandler.send(errorToPeer, formatter)
+                        ).fork();
                     } catch (Throwable t) {
                         // Fork error sends off the reader thread to avoid
                         // deadlock with synchronized send()
