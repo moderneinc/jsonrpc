@@ -16,6 +16,7 @@
 package io.moderne.jsonrpc.handler;
 
 import io.moderne.jsonrpc.JsonRpcMessage;
+import io.moderne.jsonrpc.JsonRpcReceiveException;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
 
@@ -35,15 +36,36 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         int b = inputStream.read();
         if (b == -1) {
+            // Stream closed cleanly between messages — let the reader loop
+            // shut down rather than spin treating EOF as a parse failure.
             throw new EOFException("Stream closed");
         }
+        boolean foundNewline = false;
         do {
             buffer.write(b);
             if (b == '\n') {
+                foundNewline = true;
                 break;
             }
         } while ((b = inputStream.read()) != -1);
-        return formatter.deserialize(new ByteArrayInputStream(buffer.toByteArray()));
+        if (!foundNewline) {
+            // Bytes read but no terminating newline before EOF — peer died
+            // mid-message. Match HeaderDelimitedMessageHandler's mid-message
+            // EOF behavior so the reader loop exits instead of treating
+            // partial bytes as a recoverable parse failure.
+            throw new EOFException("Stream closed mid-message after " + buffer.size() + " bytes");
+        }
+        byte[] content = buffer.toByteArray();
+        try {
+            return formatter.deserialize(new ByteArrayInputStream(content));
+        } catch (IOException e) {
+            // Parse failure on a complete frame. Surface as JsonRpcReceiveException
+            // so JsonRpc.bind() routes the error back to the peer rather than
+            // letting it fall through to the generic Throwable catch (which
+            // would lose the extracted id and the proper Invalid Request code).
+            throw new JsonRpcReceiveException(IdExtractor.extractId(content),
+                    JsonRpcReceiveException.invalidRequestDetail(e.getMessage()));
+        }
     }
 
     @Override
