@@ -64,10 +64,14 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     }
 
     @Override
-    public JsonRpcMessage receive(MessageFormatter formatter) {
+    public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
         MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         byte[] content = null;
         try {
+            // readLineFromInputStream throws EOFException when the peer has closed
+            // the stream cleanly between messages; let that propagate so the reader
+            // loop can exit instead of treating EOF as a malformed message and
+            // spinning at full CPU constructing exceptions for every empty read.
             String contentLength = readLineFromInputStream();
             Matcher contentLengthMatcher = CONTENT_LENGTH.matcher(contentLength);
             if (!contentLengthMatcher.matches()) {
@@ -91,16 +95,19 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             for (int totalRead = 0; totalRead < content.length; ) {
                 int bytesRead = inputStream.read(content, totalRead, content.length - totalRead);
                 if (bytesRead == -1) {
-                    // Stream ended unexpectedly before reading full content
-                    return JsonRpcError.invalidRequest(null,
-                            "Content length mismatch. Expected " + content.length +
-                                    " but received " + totalRead);
+                    // Mid-message EOF — treat as a closed stream rather than a
+                    // recoverable parse error, otherwise the loop spins on the
+                    // already-closed pipe.
+                    throw new EOFException("Stream closed mid-message after " + totalRead +
+                            " of " + content.length + " bytes");
                 }
                 totalRead += bytesRead;
             }
 
             ByteArrayInputStream bis = new ByteArrayInputStream(content);
             return effectiveFormatter.deserialize(bis);
+        } catch (EOFException e) {
+            throw e;
         } catch (IOException e) {
             return JsonRpcError.invalidRequest(extractId(content), e.getMessage());
         }
@@ -142,15 +149,21 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
 
     private String readLineFromInputStream() throws IOException {
         StringBuilder sb = new StringBuilder();
-        int c;
-        while ((c = inputStream.read()) != -1) {
+        int c = inputStream.read();
+        if (c == -1) {
+            // EOF before any byte was read: peer closed the stream between
+            // messages. Surface as EOFException so the reader loop can shut
+            // down instead of returning an empty string that the caller would
+            // misinterpret as a malformed header.
+            throw new EOFException("Stream closed");
+        }
+        do {
             if (c == '\n') {
                 break;
-            } else if (c == '\r') {
-                continue;
+            } else if (c != '\r') {
+                sb.append((char) c);
             }
-            sb.append((char) c);
-        }
+        } while ((c = inputStream.read()) != -1);
         return sb.toString();
     }
 

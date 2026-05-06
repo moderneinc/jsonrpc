@@ -18,9 +18,17 @@ package io.moderne.jsonrpc.handler;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 
+import java.io.EOFException;
+import java.io.IOException;
+
 public interface MessageHandler {
 
-    JsonRpcMessage receive(MessageFormatter formatter);
+    /**
+     * @throws EOFException when the underlying stream has been closed cleanly
+     *                      between messages — the reader loop should shut down.
+     * @throws IOException  for unrecoverable transport failures.
+     */
+    JsonRpcMessage receive(MessageFormatter formatter) throws IOException;
 
     void send(JsonRpcMessage msg, MessageFormatter formatter);
 }

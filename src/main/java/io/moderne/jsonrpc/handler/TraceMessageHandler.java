@@ -21,6 +21,7 @@ import io.moderne.jsonrpc.JsonRpcResponse;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
 
+import java.io.IOException;
 import java.io.PrintStream;
 
 @RequiredArgsConstructor
@@ -34,7 +35,7 @@ public class TraceMessageHandler implements MessageHandler {
     }
 
     @Override
-    public JsonRpcMessage receive(MessageFormatter formatter) {
+    public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
         JsonRpcMessage message = delegate.receive(formatter);
         if (message instanceof JsonRpcResponse) {
             out.printf("<-(%s)- %s%n", name, message);
