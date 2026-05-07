@@ -16,6 +16,8 @@
 package io.moderne.jsonrpc.formatter;
 
 import io.moderne.jsonrpc.JsonRpcMessage;
+import io.moderne.jsonrpc.RawJson;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -30,9 +32,13 @@ public interface MessageFormatter {
     void serialize(JsonRpcMessage message, OutputStream out) throws IOException;
 
     /**
-     * Converts a value (typically from JSON-RPC params or result) to the specified type.
+     * Convert a {@link RawJson} value (typically from JSON-RPC {@code params}
+     * or {@code result}) to a typed POJO. Implementations decide how to
+     * handle each possible wrapped representation: a POJO awaiting
+     * serialization, a parser-format-specific buffer captured during
+     * {@code deserialize}, or {@code null}.
      */
-    <T> T convertValue(Object value, Type type);
+    <T> @Nullable T convertValue(RawJson value, Type type);
 
     default Charset getEncoding() {
         return StandardCharsets.UTF_8;

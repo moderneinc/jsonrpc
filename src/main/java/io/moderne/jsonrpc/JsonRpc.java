@@ -18,13 +18,11 @@ package io.moderne.jsonrpc;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.MessageHandler;
-import lombok.RequiredArgsConstructor;
 
 import java.io.EOFException;
 import java.util.Map;
 import java.util.concurrent.*;
 
-@RequiredArgsConstructor
 public class JsonRpc {
     private final ForkJoinPool forkJoin = new ForkJoinPool(
             4, ForkJoinPool.defaultForkJoinWorkerThreadFactory, null, true);
@@ -43,6 +41,11 @@ public class JsonRpc {
     @Deprecated
     public JsonRpc(MessageHandler messageHandler) {
         this(messageHandler, new JsonMessageFormatter());
+    }
+
+    public JsonRpc(MessageHandler messageHandler, MessageFormatter formatter) {
+        this.messageHandler = messageHandler;
+        this.formatter = formatter;
     }
 
     public <P> JsonRpc rpc(String name, JsonRpcMethod<P> method) {
@@ -105,18 +108,7 @@ public class JsonRpc {
                                         messageHandler.send(JsonRpcError.methodNotFound(errorId, errorMethod), formatter)
                                 ).fork();
                             } else {
-                                ForkJoinTask.adapt(() -> {
-                                    try {
-                                        Object response = method.convertAndHandle(request.getParams(), formatter);
-                                        if (response != null) {
-                                            messageHandler.send(new JsonRpcSuccess(request.getId(), response), formatter);
-                                        } else {
-                                            messageHandler.send(JsonRpcError.internalError(request.getId(), "Method returned null"), formatter);
-                                        }
-                                    } catch (Exception e) {
-                                        messageHandler.send(JsonRpcError.internalError(request.getId(), e), formatter);
-                                    }
-                                }).fork();
+                                ForkJoinTask.adapt(() -> dispatch(request, method)).fork();
                             }
                         }
                     } catch (EOFException e) {
@@ -155,6 +147,22 @@ public class JsonRpc {
             }
         });
         return this;
+    }
+
+    private void dispatch(JsonRpcRequest request, JsonRpcMethod<?> method) {
+        JsonRpcMessage outbound;
+        try {
+            Object result = method.convertAndHandle(request.getParams(), formatter);
+            // Wrap the handler's return value so the on-wire representation
+            // goes through the same RawJson + Jackson serializer pipeline
+            // as inbound-converted values.
+            outbound = result != null
+                    ? new JsonRpcSuccess(request.getId(), RawJson.of(result))
+                    : JsonRpcError.internalError(request.getId(), "Method returned null");
+        } catch (Exception e) {
+            outbound = JsonRpcError.internalError(request.getId(), e);
+        }
+        messageHandler.send(outbound, formatter);
     }
 
     public void shutdown() {

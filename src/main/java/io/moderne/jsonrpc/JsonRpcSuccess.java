@@ -31,7 +31,7 @@ public class JsonRpcSuccess extends JsonRpcResponse {
 
     @Getter
     @Nullable
-    private final Object result;
+    private final RawJson result;
 
     @JsonIgnore
     @EqualsAndHashCode.Exclude
@@ -39,22 +39,22 @@ public class JsonRpcSuccess extends JsonRpcResponse {
     @Nullable
     private final transient MessageFormatter formatter;
 
-    public JsonRpcSuccess(Object id, @Nullable Object result) {
+    public JsonRpcSuccess(Object id, @Nullable RawJson result) {
         this(id, result, null);
     }
 
-    private JsonRpcSuccess(Object id, @Nullable Object result, @Nullable MessageFormatter formatter) {
+    private JsonRpcSuccess(Object id, @Nullable RawJson result, @Nullable MessageFormatter formatter) {
         this.id = id;
         this.result = result;
         this.formatter = formatter;
     }
 
-    public static JsonRpcSuccess fromPayload(Object id, @Nullable Object result, @Nullable MessageFormatter formatter) {
+    public static JsonRpcSuccess fromPayload(Object id, @Nullable RawJson result, @Nullable MessageFormatter formatter) {
         return new JsonRpcSuccess(id, result, formatter);
     }
 
-    public <V> V getResult(Class<V> resultType) {
+    public <V> @Nullable V getResult(Class<V> resultType) {
         assert formatter != null;
-        return formatter.convertValue(result, resultType);
+        return result == null ? null : formatter.convertValue(result, resultType);
     }
 }

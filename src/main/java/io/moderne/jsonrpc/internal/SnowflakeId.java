@@ -17,9 +17,9 @@ package io.moderne.jsonrpc.internal;
 
 import java.util.concurrent.atomic.AtomicLong;
 
-public class SnowflakeId {
+public final class SnowflakeId {
     private static final long EPOCH = 1640995200000L; // Custom epoch
-    private static final long MACHINE_ID = 1L; // Unique machine ID (0-1023)
+    private static final long MACHINE_ID = 1L;        // Unique machine ID (0-1023)
 
     private static final long MACHINE_ID_BITS = 10L;
     private static final long SEQUENCE_BITS = 12L;
@@ -28,34 +28,51 @@ public class SnowflakeId {
     private static final long MACHINE_ID_SHIFT = SEQUENCE_BITS;
     private static final long TIMESTAMP_SHIFT = MACHINE_ID_SHIFT + MACHINE_ID_BITS;
 
-    private static final AtomicLong lastTimestamp = new AtomicLong(-1L);
-    private static final AtomicLong sequence = new AtomicLong(0L);
+    /**
+     * Packed (timestamp_since_epoch &lt;&lt; SEQUENCE_BITS | sequence_within_ms).
+     * Single source of truth for monotonicity — split AtomicLongs would race
+     * across the millisecond boundary and produce duplicates.
+     */
+    private static final AtomicLong state = new AtomicLong(0L);
 
     private SnowflakeId() {
     }
 
     /**
-     * @return A short, unique ID produced in a similar way as Twitter's Snowflake ID
+     * @return A short, unique ID produced in a similar way as Twitter's Snowflake ID.
      */
-    public static synchronized String generateId() {
-        long currentTimestamp = System.currentTimeMillis() - EPOCH;
+    public static String generateId() {
+        while (true) {
+            long currentMs = System.currentTimeMillis() - EPOCH;
+            long prev = state.get();
+            long prevTs = prev >>> SEQUENCE_BITS;
+            long prevSeq = prev & MAX_SEQUENCE;
 
-        if (currentTimestamp == lastTimestamp.get()) {
-            // Increment sequence within the same millisecond
-            long seq = sequence.incrementAndGet() & MAX_SEQUENCE;
-            if (seq == 0) {
-                // Sequence exhausted, wait for next millisecond
-                while (currentTimestamp <= lastTimestamp.get()) {
-                    currentTimestamp = System.currentTimeMillis() - EPOCH;
+            long nextTs;
+            long nextSeq;
+            if (currentMs > prevTs) {
+                // Forward time — new millisecond, reset sequence.
+                nextTs = currentMs;
+                nextSeq = 0L;
+            } else {
+                // Same ms (or clock went backward — keep prevTs to preserve
+                // monotonicity, advance the sequence within it).
+                nextTs = prevTs;
+                nextSeq = prevSeq + 1;
+                if (nextSeq > MAX_SEQUENCE) {
+                    // Sequence exhausted within this ms — yield and retry
+                    // until the clock advances or we observe a fresher state.
+                    Thread.yield();
+                    continue;
                 }
             }
-        } else {
-            sequence.set(0L);
+            long next = (nextTs << SEQUENCE_BITS) | nextSeq;
+            if (state.compareAndSet(prev, next)) {
+                return encodeBase62((nextTs << TIMESTAMP_SHIFT) | (MACHINE_ID << MACHINE_ID_SHIFT) | nextSeq);
+            }
+            // CAS lost the race — another thread updated state. Retry; the
+            // fresh `prev` read will produce a higher sequence (or timestamp).
         }
-
-        lastTimestamp.set(currentTimestamp);
-
-        return encodeBase62((currentTimestamp << TIMESTAMP_SHIFT) | (MACHINE_ID << MACHINE_ID_SHIFT) | sequence.get());
     }
 
     private static final String BASE62_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz";

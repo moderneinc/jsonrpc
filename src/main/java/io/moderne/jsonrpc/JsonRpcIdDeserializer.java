@@ -16,33 +16,32 @@
 package io.moderne.jsonrpc;
 
 import com.fasterxml.jackson.core.JsonParser;
-import com.fasterxml.jackson.core.ObjectCodec;
 import com.fasterxml.jackson.databind.DeserializationContext;
 import com.fasterxml.jackson.databind.JsonDeserializer;
-import com.fasterxml.jackson.databind.JsonNode;
 
 import java.io.IOException;
 
 public class JsonRpcIdDeserializer extends JsonDeserializer<Object> {
 
     @Override
-    public Object deserialize(JsonParser jsonParser, DeserializationContext deserializationContext) throws IOException {
-        ObjectCodec codec = jsonParser.getCodec();
-        JsonNode jsonNode = codec.readTree(jsonParser);
-        if (jsonNode.isNumber()) {
-            // The assumption here is that the id is either a String or an Integer, and likely
-            // an Integer that is no larger than JavaScripts `Number.MAX_SAFE_INTEGER` since
-            // any JSON-RPC client interacting with a JavaScript peer wouldn't be able to send
-            // integer values larger than that without JavaScript converting that integer to a
-            // float, losing precision, and therefore not being able to associate requests/responses
-            // with the correct id.
-            return jsonNode.asInt();
-        } else if (jsonNode.isTextual()) {
-            return jsonNode.asText();
-        } else if (jsonNode.isNull()) {
-            return null;
-        } else {
-            throw new IOException("A JSON-RPC ID according to the spec \"MUST contain a String, Number, or NULL value if included\". See §4 of https://www.jsonrpc.org/specification.");
+    public Object deserialize(JsonParser parser, DeserializationContext context) throws IOException {
+        // Direct token inspection — no JsonNode tree allocation. The id field
+        // is a scalar by spec ("String, Number, or NULL value if included"),
+        // so a single switch on the current token covers every legal shape.
+        switch (parser.currentToken()) {
+            case VALUE_NUMBER_INT:
+                // Per the comment that used to live here: assume int. Any
+                // JSON-RPC client interacting with a JavaScript peer cannot
+                // send integers larger than Number.MAX_SAFE_INTEGER without
+                // losing precision, so widening to long isn't worth the API
+                // change.
+                return parser.getIntValue();
+            case VALUE_STRING:
+                return parser.getText();
+            case VALUE_NULL:
+                return null;
+            default:
+                throw new IOException("A JSON-RPC ID according to the spec \"MUST contain a String, Number, or NULL value if included\". See §4 of https://www.jsonrpc.org/specification.");
         }
     }
 }

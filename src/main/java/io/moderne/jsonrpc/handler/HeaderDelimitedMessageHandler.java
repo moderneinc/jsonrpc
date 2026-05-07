@@ -18,7 +18,6 @@ package io.moderne.jsonrpc.handler;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.JsonRpcReceiveException;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
-import lombok.RequiredArgsConstructor;
 import org.jspecify.annotations.Nullable;
 
 import java.io.*;
@@ -32,7 +31,6 @@ import java.util.regex.Pattern;
  * It utilizes HTTP-like headers to introduce each JSON-RPC message by describing its
  * length and (optionally) its text encoding.
  */
-@RequiredArgsConstructor
 public class HeaderDelimitedMessageHandler implements MessageHandler {
     private static final Pattern CONTENT_LENGTH = Pattern.compile("Content-Length: (\\d+)");
 
@@ -57,6 +55,16 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     public HeaderDelimitedMessageHandler(MessageFormatter formatter, InputStream inputStream, OutputStream outputStream) {
         this(inputStream, outputStream);
         this.formatter = formatter;
+    }
+
+    public HeaderDelimitedMessageHandler(InputStream inputStream, OutputStream outputStream) {
+        // Wrap so byte-by-byte header reads (`readLineFromInputStream`) don't
+        // hit a syscall per byte. Skip re-wrapping a stream the caller has
+        // already buffered — double-buffering wastes a copy with no benefit.
+        this.inputStream = inputStream instanceof BufferedInputStream
+                ? inputStream
+                : new BufferedInputStream(inputStream);
+        this.outputStream = outputStream;
     }
 
     @Override
