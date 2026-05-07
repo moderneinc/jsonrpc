@@ -64,7 +64,7 @@ public class JsonRpcTest {
                 .send(JsonRpcRequest.newRequest("hello", new Person("Jon")))
                 .get(5, TimeUnit.SECONDS);
 
-        assertThat(response.getResult()).isEqualTo("Hello Jon");
+        assertThat(response.getResult(String.class)).isEqualTo("Hello Jon");
     }
 
     @Test
@@ -80,7 +80,7 @@ public class JsonRpcTest {
                 .send(JsonRpcRequest.newRequest("hello"))
                 .get(5, TimeUnit.SECONDS);
 
-        assertThat(response.getResult()).isEqualTo("Hello Jon");
+        assertThat(response.getResult(String.class)).isEqualTo("Hello Jon");
     }
 
     @Test
@@ -128,7 +128,7 @@ public class JsonRpcTest {
                 .send(JsonRpcRequest.newRequest("hello", List.of("Jon", "Jim")))
                 .get(5, TimeUnit.SECONDS);
 
-        assertThat(response.getResult()).isEqualTo("Hello Jon and Jim");
+        assertThat(response.getResult(String.class)).isEqualTo("Hello Jon and Jim");
     }
 
     @Test

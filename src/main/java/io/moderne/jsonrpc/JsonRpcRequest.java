@@ -30,13 +30,17 @@ public class JsonRpcRequest extends JsonRpcMessage {
     String method;
 
     /**
-     * Either a Map of named parameters or a List of positional parameters.
+     * Either named parameters (a Map-shaped value), positional parameters
+     * (a list), or a typed POJO wrapped at request construction. Use
+     * {@link RawJson#as} (or call {@link io.moderne.jsonrpc.formatter.MessageFormatter#convertValue}
+     * directly) inside a {@link JsonRpcMethod} to materialize the typed value.
      */
     @Nullable
-    Object params;
+    RawJson params;
 
-    public static JsonRpcRequest newRequest(String method, Object params) {
-        return new JsonRpcRequest(SnowflakeId.generateId(), method, params);
+    public static JsonRpcRequest newRequest(String method, @Nullable Object params) {
+        return new JsonRpcRequest(SnowflakeId.generateId(), method,
+                params == null ? null : RawJson.of(params));
     }
 
     public static JsonRpcRequest newRequest(String method) {

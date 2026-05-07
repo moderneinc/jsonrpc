@@ -18,7 +18,6 @@ package io.moderne.jsonrpc.handler;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.JsonRpcReceiveException;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
-import lombok.RequiredArgsConstructor;
 
 import java.io.*;
 
@@ -26,10 +25,19 @@ import java.io.*;
  * This appends each JSON-RPC message with \n. It should only be used with UTF-8 text-based
  * formatters that do not emit new line characters as part of the JSON.
  */
-@RequiredArgsConstructor
 public class NewLineDelimitedMessageHandler implements MessageHandler {
     private final InputStream inputStream;
     private final OutputStream outputStream;
+
+    public NewLineDelimitedMessageHandler(InputStream inputStream, OutputStream outputStream) {
+        // Same buffering policy as HeaderDelimitedMessageHandler: read-loop is
+        // byte-by-byte until newline; buffer once at construction so we don't
+        // syscall per byte. Skip re-wrapping a pre-buffered stream.
+        this.inputStream = inputStream instanceof BufferedInputStream
+                ? inputStream
+                : new BufferedInputStream(inputStream);
+        this.outputStream = outputStream;
+    }
 
     @Override
     public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {

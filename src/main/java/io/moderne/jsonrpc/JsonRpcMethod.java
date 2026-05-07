@@ -16,6 +16,7 @@
 package io.moderne.jsonrpc;
 
 import io.moderne.jsonrpc.formatter.MessageFormatter;
+import org.jspecify.annotations.Nullable;
 
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
@@ -23,13 +24,22 @@ import java.lang.reflect.Type;
 @SuppressWarnings("unused")
 public abstract class JsonRpcMethod<P> {
 
-    final Object convertAndHandle(Object params, MessageFormatter formatter) throws Exception {
-        Type paramType = ((ParameterizedType) getClass().getGenericSuperclass())
+    // Resolved once per instance at construction. The previous implementation
+    // walked getGenericSuperclass()/getActualTypeArguments() on every dispatch
+    // — same answer every call, so cache it.
+    private final Type paramType;
+
+    protected JsonRpcMethod() {
+        this.paramType = ((ParameterizedType) getClass().getGenericSuperclass())
                 .getActualTypeArguments()[0];
+    }
+
+    @SuppressWarnings("unchecked")
+    final Object convertAndHandle(@Nullable RawJson params, MessageFormatter formatter) throws Exception {
         if (Void.class.equals(paramType)) {
             return handle(null);
         }
-        return handle(formatter.convertValue(params, paramType));
+        return handle(params == null ? null : (P) formatter.convertValue(params, paramType));
     }
 
     protected abstract Object handle(P params) throws Exception;
