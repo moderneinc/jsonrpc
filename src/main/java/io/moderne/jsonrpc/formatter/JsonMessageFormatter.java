@@ -23,6 +23,7 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.fasterxml.jackson.module.blackbird.BlackbirdModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
 import io.moderne.jsonrpc.JsonRpcError;
 import io.moderne.jsonrpc.JsonRpcMessage;
@@ -44,7 +45,7 @@ public class JsonMessageFormatter implements MessageFormatter {
                 // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
                 .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
                 .build()
-                .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+                .registerModules(new ParameterNamesModule(), new JavaTimeModule(), new BlackbirdModule())
                 .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL));
         mapper.setVisibility(mapper.getSerializationConfig().getDefaultVisibilityChecker()
@@ -60,7 +61,7 @@ public class JsonMessageFormatter implements MessageFormatter {
                 // see https://cowtowncoder.medium.com/jackson-2-12-most-wanted-3-5-246624e2d3d0
                 .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
                 .build()
-                .registerModules(new ParameterNamesModule(), new JavaTimeModule())
+                .registerModules(new ParameterNamesModule(), new JavaTimeModule(), new BlackbirdModule())
                 .registerModules(modules)
                 .disable(SerializationFeature.FAIL_ON_EMPTY_BEANS)
                 .setSerializationInclusion(JsonInclude.Include.NON_NULL));
