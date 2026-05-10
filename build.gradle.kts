@@ -16,6 +16,12 @@ dependencies {
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
     compileOnly("io.micrometer:micrometer-core:latest.release")
     implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:2.17.2")
+    // Blackbird generates LambdaMetafactory-backed property accessors so
+    // Jackson skips the reflective MethodHandle path. ~1.5-2x on real RPC
+    // traffic per a JMH bench replaying a captured trace from `mod run`
+    // org.openrewrite.node.migrate.upgrade-node-24 — measurable on the
+    // GetObject deserialize path where field counts in nested Maps are high.
+    implementation("com.fasterxml.jackson.module:jackson-module-blackbird:2.17.2")
     testImplementation("org.openrewrite:rewrite-test:latest.release")
 }
 
