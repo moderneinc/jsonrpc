@@ -15,6 +15,7 @@
  */
 package io.moderne.jsonrpc;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.databind.annotation.JsonDeserialize;
 import lombok.EqualsAndHashCode;
 import lombok.Value;
@@ -26,6 +27,12 @@ import java.io.StringWriter;
 @Value
 @EqualsAndHashCode(callSuper = false)
 public class JsonRpcError extends JsonRpcResponse {
+    // JSON-RPC 2.0 requires error responses to carry an "id" (null when the error
+    // can't be correlated to a request, e.g. an internal error on a background
+    // thread). Without ALWAYS, a global NON_NULL inclusion omits a null id, and
+    // strict peers (e.g. StreamJsonRpc on the .NET side) reject the frame with
+    // "id property missing" and abort — masking the real error.
+    @JsonInclude(JsonInclude.Include.ALWAYS)
     @JsonDeserialize(using = JsonRpcIdDeserializer.class)
     Object id;
 
