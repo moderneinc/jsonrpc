@@ -90,8 +90,7 @@ class NewLineDelimitedMessageHandlerTest {
         NewLineDelimitedMessageHandler handler = new NewLineDelimitedMessageHandler(framed, new ByteArrayOutputStream());
 
         assertThatThrownBy(() -> handler.receive(FORMATTER))
-                .isInstanceOfSatisfying(JsonRpcReceiveException.class, e -> {
-                    assertThat(e.toError().getId()).isEqualTo(42);
-                });
+                .isInstanceOfSatisfying(JsonRpcReceiveException.class, e ->
+                    assertThat(e.toError().getId()).isEqualTo(42));
     }
 }
