@@ -12,3 +12,5 @@ out/
 IDE.properties
 # ASDF https://asdf-vm.com/
 .tool-versions
+
+.cursor/rules/*.local.mdc
