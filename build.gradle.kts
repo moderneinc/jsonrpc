@@ -19,13 +19,6 @@ dependencies {
     testImplementation("org.openrewrite:rewrite-test:latest.release")
 }
 
-nexusPublishing {
-    repositories.getByName("sonatype") {
-        nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
-        snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
-    }
-}
-
 tasks.named("test") {
     dependsOn("jar")
 }
