@@ -16,7 +16,9 @@
 package io.moderne.jsonrpc;
 
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
+import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.HeaderDelimitedMessageHandler;
+import io.moderne.jsonrpc.handler.MessageHandler;
 import io.moderne.jsonrpc.handler.TraceMessageHandler;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,6 +98,53 @@ public class JsonRpcTest {
                 .send(JsonRpcRequest.newRequest("hello", new Person("Jon")))
                 .get(5, TimeUnit.SECONDS)
         ).hasCauseInstanceOf(JsonRpcException.class);
+    }
+
+    @Test
+    void rpcThrowsError() {
+        assertThatThrownBy(() -> jsonRpc
+                .rpc("hello", new JsonRpcMethod<Person>() {
+                    @Override
+                    protected Object handle(Person params) {
+                        throw new StackOverflowError("Boom");
+                    }
+                })
+                .bind()
+                .send(JsonRpcRequest.newRequest("hello", new Person("Jon")))
+                .get(5, TimeUnit.SECONDS)
+        ).hasCauseInstanceOf(JsonRpcException.class);
+    }
+
+    @Test
+    void receiveErrorFailsWaitingRequests() throws Exception {
+        CountDownLatch sent = new CountDownLatch(1);
+        OutOfMemoryError oom = new OutOfMemoryError("Java heap space");
+        JsonRpc localRpc = new JsonRpc(new MessageHandler() {
+            @Override
+            public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
+                try {
+                    sent.await();
+                } catch (InterruptedException e) {
+                    throw new IOException(e);
+                }
+                throw oom;
+            }
+
+            @Override
+            public void send(JsonRpcMessage msg, MessageFormatter formatter) {
+                sent.countDown();
+            }
+        }, new JsonMessageFormatter()).bind();
+        try {
+            CompletableFuture<JsonRpcSuccess> inFlight = localRpc.send(JsonRpcRequest.newRequest("hello"));
+
+            assertThatThrownBy(() -> inFlight.get(5, TimeUnit.SECONDS)).hasCause(oom);
+            assertThatThrownBy(() -> localRpc.send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS))
+                    .as("a request sent after the reader died fails instead of waiting")
+                    .hasCause(oom);
+        } finally {
+            localRpc.shutdown();
+        }
     }
 
     @Test
