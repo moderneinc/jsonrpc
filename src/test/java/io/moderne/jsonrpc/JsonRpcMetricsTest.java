@@ -15,12 +15,8 @@
  */
 package io.moderne.jsonrpc;
 
-import io.micrometer.core.instrument.Meter;
 import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.Tags;
-import io.micrometer.core.instrument.Timer;
-import io.micrometer.core.instrument.distribution.DistributionStatisticConfig;
-import io.micrometer.core.instrument.distribution.pause.PauseDetector;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.handler.HeaderDelimitedMessageHandler;
@@ -50,8 +46,7 @@ class JsonRpcMetricsTest {
     /**
      * Unique per test, so a recording that lands after an earlier test ended isn't counted here.
      */
-    String peerId = UUID.randomUUID().toString();
-    Tags peer = Tags.of("peer", peerId);
+    Tags peer = Tags.of("peer", UUID.randomUUID().toString());
 
     /**
      * Sends to itself, so every request is both a client and a server request.
@@ -133,31 +128,6 @@ class JsonRpcMetricsTest {
             assertThat(recorded("jsonrpc.client.requests")).containsExactly("never-answered:closed");
         } finally {
             closed.shutdown();
-        }
-    }
-
-    @Test
-    void registryRejectingTheTimerDoesNotAffectRequests() throws Exception {
-        // Adding a registry to the global composite registers every meter already in it, so only
-        // this test's are rejected.
-        SimpleMeterRegistry rejecting = new SimpleMeterRegistry() {
-            @Override
-            protected Timer newTimer(Meter.Id id, DistributionStatisticConfig config, PauseDetector pauseDetector) {
-                if (peerId.equals(id.getTag("peer"))) {
-                    throw new IllegalArgumentException("rejected");
-                }
-                return super.newTimer(id, config, pauseDetector);
-            }
-        };
-
-        Metrics.addRegistry(rejecting);
-        try {
-            JsonRpcSuccess response = loopback.rpc("hello", handler(() -> "Hello")).bind()
-                    .send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS);
-
-            assertThat(response.getResult(String.class)).isEqualTo("Hello");
-        } finally {
-            Metrics.removeRegistry(rejecting);
         }
     }
 

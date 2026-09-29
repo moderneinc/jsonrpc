@@ -50,11 +50,6 @@ public class JsonRpc {
 
     private volatile Iterable<Tag> tags = Tags.empty();
 
-    private final RequestTimers clientRequests = new RequestTimers("jsonrpc.client.requests",
-            "Requests sent to the JSON-RPC peer, until the response arrives");
-    private final RequestTimers serverRequests = new RequestTimers("jsonrpc.server.requests",
-            "Requests received from the JSON-RPC peer, until the reply is written");
-
     /**
      * @deprecated Use {@link #JsonRpc(MessageHandler, MessageFormatter)} instead.
      */
@@ -76,7 +71,7 @@ public class JsonRpc {
     /**
      * Added to the {@code method} and {@code outcome} tags of the timers this records for the
      * requests it sends ({@code jsonrpc.client.requests}) and handles
-     * ({@code jsonrpc.server.requests}). Set them before {@link #bind()}.
+     * ({@code jsonrpc.server.requests}).
      */
     public JsonRpc tags(Iterable<Tag> tags) {
         this.tags = tags;
@@ -84,7 +79,7 @@ public class JsonRpc {
     }
 
     public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
-        OpenRequest open = new OpenRequest(clientRequests, request.getMethod());
+        OpenRequest open = new OpenRequest(request.getMethod(), tags);
         openRequests.put(request.getId(), open);
         if (shutdown) {
             // Reader loop already exited (peer EOF or explicit shutdown) and
@@ -236,7 +231,7 @@ public class JsonRpc {
         try {
             messageHandler.send(outbound, formatter);
         } finally {
-            serverRequests.record(sample, request.getMethod(), outcome);
+            record(sample, "jsonrpc.server.requests", tags, request.getMethod(), outcome);
         }
     }
 
@@ -255,14 +250,14 @@ public class JsonRpc {
                 AtomicIntegerFieldUpdater.newUpdater(OpenRequest.class, "reported");
 
         final CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
-        private final RequestTimers timers;
         private final String method;
+        private final Iterable<Tag> tags;
         private final Timer.Sample sample = Timer.start(Metrics.globalRegistry);
         private volatile int reported;
 
-        OpenRequest(RequestTimers timers, String method) {
-            this.timers = timers;
+        OpenRequest(String method, Iterable<Tag> tags) {
             this.method = method;
+            this.tags = tags;
             response.whenComplete((result, t) -> report(
                     t == null ? Outcome.SUCCESS :
                             t instanceof TimeoutException ? Outcome.TIMEOUT :
@@ -282,52 +277,22 @@ public class JsonRpc {
 
         private void report(Outcome outcome) {
             if (REPORTED.compareAndSet(this, 0, 1)) {
-                timers.record(sample, method, outcome);
+                record(sample, "jsonrpc.client.requests", tags, method, outcome);
             }
         }
+    }
+
+    private static void record(Timer.Sample sample, String name, Iterable<Tag> tags, String method, Outcome outcome) {
+        sample.stop(Timer.builder(name)
+                .tags(tags)
+                .tag("method", method)
+                .tag("outcome", outcome.tag)
+                .register(Metrics.globalRegistry));
     }
 
     private enum Outcome {
         SUCCESS, ERROR, CLOSED, TIMEOUT, CANCELLED;
 
         private final String tag = name().toLowerCase(Locale.ROOT);
-    }
-
-    private final class RequestTimers {
-        private final String name;
-        private final String description;
-
-        // Looked up once per request, so cached rather than rebuilt: by method, then by outcome ordinal.
-        private final Map<String, Timer[]> byMethod = new ConcurrentHashMap<>();
-
-        RequestTimers(String name, String description) {
-            this.name = name;
-            this.description = description;
-        }
-
-        void record(Timer.Sample sample, String method, Outcome outcome) {
-            try {
-                sample.stop(timer(method, outcome));
-            } catch (RuntimeException ignored) {
-                // A registry can reject a meter (Prometheus does for a name already registered with
-                // other tag keys); that must not fail the request being measured.
-            }
-        }
-
-        private Timer timer(String method, Outcome outcome) {
-            Timer[] byOutcome = byMethod.computeIfAbsent(method, m -> new Timer[Outcome.values().length]);
-            Timer timer = byOutcome[outcome.ordinal()];
-            if (timer == null) {
-                // Racing threads register the same meter and the registry returns it to both.
-                timer = Timer.builder(name)
-                        .description(description)
-                        .tags(tags)
-                        .tag("method", method)
-                        .tag("outcome", outcome.tag)
-                        .register(Metrics.globalRegistry);
-                byOutcome[outcome.ordinal()] = timer;
-            }
-            return timer;
-        }
     }
 }
