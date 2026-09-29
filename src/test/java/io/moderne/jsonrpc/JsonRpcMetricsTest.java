@@ -16,6 +16,7 @@
 package io.moderne.jsonrpc;
 
 import io.micrometer.core.instrument.Meter;
+import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.Tags;
 import io.micrometer.core.instrument.Timer;
 import io.micrometer.core.instrument.distribution.DistributionStatisticConfig;
@@ -33,6 +34,7 @@ import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -46,21 +48,29 @@ class JsonRpcMetricsTest {
     SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
     /**
+     * Unique per test, so a recording that lands after an earlier test ended isn't counted here.
+     */
+    String peerId = UUID.randomUUID().toString();
+    Tags peer = Tags.of("peer", peerId);
+
+    /**
      * Sends to itself, so every request is both a client and a server request.
      */
     JsonRpc loopback;
 
     @BeforeEach
     void before() throws IOException {
+        Metrics.addRegistry(registry);
         PipedOutputStream os = new PipedOutputStream();
         PipedInputStream is = new PipedInputStream(os);
         loopback = new JsonRpc(new HeaderDelimitedMessageHandler(is, os), new JsonMessageFormatter())
-                .metrics(registry, Tags.of("peer", "loopback"));
+                .tags(peer);
     }
 
     @AfterEach
     void after() {
         loopback.shutdown();
+        Metrics.removeRegistry(registry);
     }
 
     @Test
@@ -71,16 +81,6 @@ class JsonRpcMetricsTest {
         awaitRecorded("jsonrpc.server.requests", "hello", "success");
         assertThat(recorded("jsonrpc.client.requests")).containsExactly("hello:success");
         assertThat(recorded("jsonrpc.server.requests")).containsExactly("hello:success");
-    }
-
-    @Test
-    void additionalTagsAreOnEveryTimer() throws Exception {
-        loopback.rpc("hello", handler(() -> "Hello")).bind()
-                .send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS);
-
-        awaitRecorded("jsonrpc.server.requests", "hello", "success");
-        assertThat(registry.find("jsonrpc.client.requests").tag("peer", "loopback").timers()).hasSize(1);
-        assertThat(registry.find("jsonrpc.server.requests").tag("peer", "loopback").timers()).hasSize(1);
     }
 
     @Test
@@ -124,7 +124,7 @@ class JsonRpcMetricsTest {
         JsonRpc closed = new JsonRpc(
                 new HeaderDelimitedMessageHandler(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream()),
                 new JsonMessageFormatter())
-                .metrics(registry, Tags.empty())
+                .tags(peer)
                 .bind();
         try {
             CompletableFuture<JsonRpcSuccess> response = closed.send(JsonRpcRequest.newRequest("never-answered"));
@@ -138,25 +138,34 @@ class JsonRpcMetricsTest {
 
     @Test
     void registryRejectingTheTimerDoesNotAffectRequests() throws Exception {
+        // Adding a registry to the global composite registers every meter already in it, so only
+        // this test's are rejected.
         SimpleMeterRegistry rejecting = new SimpleMeterRegistry() {
             @Override
             protected Timer newTimer(Meter.Id id, DistributionStatisticConfig config, PauseDetector pauseDetector) {
-                throw new IllegalArgumentException("rejected");
+                if (peerId.equals(id.getTag("peer"))) {
+                    throw new IllegalArgumentException("rejected");
+                }
+                return super.newTimer(id, config, pauseDetector);
             }
         };
 
-        JsonRpcSuccess response = loopback.metrics(rejecting, Tags.empty())
-                .rpc("hello", handler(() -> "Hello")).bind()
-                .send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS);
+        Metrics.addRegistry(rejecting);
+        try {
+            JsonRpcSuccess response = loopback.rpc("hello", handler(() -> "Hello")).bind()
+                    .send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS);
 
-        assertThat(response.getResult(String.class)).isEqualTo("Hello");
+            assertThat(response.getResult(String.class)).isEqualTo("Hello");
+        } finally {
+            Metrics.removeRegistry(rejecting);
+        }
     }
 
     /**
      * Each recorded timer of the name, as {@code method:outcome}.
      */
     private List<String> recorded(String name) {
-        return registry.find(name).timers().stream()
+        return registry.find(name).tags(peer).timers().stream()
                 .filter(t -> t.count() > 0)
                 .map(t -> t.getId().getTag("method") + ":" + t.getId().getTag("outcome"))
                 .collect(toList());

@@ -15,18 +15,18 @@
  */
 package io.moderne.jsonrpc;
 
-import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Metrics;
 import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.Timer;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.MessageHandler;
-import io.moderne.jsonrpc.internal.RequestMetrics;
-import io.moderne.jsonrpc.internal.RequestMetrics.Outcome;
-import io.moderne.jsonrpc.internal.RequestMetrics.Sample;
 import org.jspecify.annotations.Nullable;
 
 import java.io.EOFException;
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
@@ -48,7 +48,12 @@ public class JsonRpc {
     private final MessageFormatter formatter;
     private final Map<Object, OpenRequest> openRequests = new ConcurrentHashMap<>();
 
-    private volatile @Nullable RequestMetrics metrics;
+    private volatile Iterable<Tag> tags = Tags.empty();
+
+    private final RequestTimers clientRequests = new RequestTimers("jsonrpc.client.requests",
+            "Requests sent to the JSON-RPC peer, until the response arrives");
+    private final RequestTimers serverRequests = new RequestTimers("jsonrpc.server.requests",
+            "Requests received from the JSON-RPC peer, until the reply is written");
 
     /**
      * @deprecated Use {@link #JsonRpc(MessageHandler, MessageFormatter)} instead.
@@ -69,19 +74,17 @@ public class JsonRpc {
     }
 
     /**
-     * Times the requests this sends ({@code jsonrpc.client.requests}, until the response arrives)
-     * and handles ({@code jsonrpc.server.requests}, until the reply is written), tagged with
-     * {@code method}, {@code outcome} and {@code additionalTags}. Requires Micrometer on the
-     * classpath. Set it before {@link #bind()}.
+     * Added to the {@code method} and {@code outcome} tags of the timers this records for the
+     * requests it sends ({@code jsonrpc.client.requests}) and handles
+     * ({@code jsonrpc.server.requests}). Set them before {@link #bind()}.
      */
-    public JsonRpc metrics(MeterRegistry registry, Iterable<Tag> additionalTags) {
-        this.metrics = new RequestMetrics(registry, additionalTags);
+    public JsonRpc tags(Iterable<Tag> tags) {
+        this.tags = tags;
         return this;
     }
 
     public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
-        RequestMetrics m = metrics;
-        OpenRequest open = new OpenRequest(m == null ? null : m.startClient(request.getMethod()));
+        OpenRequest open = new OpenRequest(clientRequests, request.getMethod());
         openRequests.put(request.getId(), open);
         if (shutdown) {
             // Reader loop already exited (peer EOF or explicit shutdown) and
@@ -212,8 +215,7 @@ public class JsonRpc {
     }
 
     private void dispatch(JsonRpcRequest request, JsonRpcMethod<?> method) {
-        RequestMetrics m = metrics;
-        Sample sample = m == null ? null : m.startServer(request.getMethod());
+        Timer.Sample sample = Timer.start(Metrics.globalRegistry);
         Outcome outcome = Outcome.ERROR;
         JsonRpcMessage outbound;
         try {
@@ -234,9 +236,7 @@ public class JsonRpc {
         try {
             messageHandler.send(outbound, formatter);
         } finally {
-            if (sample != null) {
-                sample.stop(outcome);
-            }
+            serverRequests.record(sample, request.getMethod(), outcome);
         }
     }
 
@@ -255,18 +255,19 @@ public class JsonRpc {
                 AtomicIntegerFieldUpdater.newUpdater(OpenRequest.class, "reported");
 
         final CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
-        private final @Nullable Sample sample;
+        private final RequestTimers timers;
+        private final String method;
+        private final Timer.Sample sample = Timer.start(Metrics.globalRegistry);
         private volatile int reported;
 
-        OpenRequest(@Nullable Sample sample) {
-            this.sample = sample;
-            if (sample != null) {
-                response.whenComplete((result, t) -> report(
-                        t == null ? Outcome.SUCCESS :
-                                t instanceof TimeoutException ? Outcome.TIMEOUT :
-                                        t instanceof CancellationException ? Outcome.CANCELLED :
-                                                Outcome.ERROR));
-            }
+        OpenRequest(RequestTimers timers, String method) {
+            this.timers = timers;
+            this.method = method;
+            response.whenComplete((result, t) -> report(
+                    t == null ? Outcome.SUCCESS :
+                            t instanceof TimeoutException ? Outcome.TIMEOUT :
+                                    t instanceof CancellationException ? Outcome.CANCELLED :
+                                            Outcome.ERROR));
         }
 
         void succeed(JsonRpcSuccess success) {
@@ -280,9 +281,53 @@ public class JsonRpc {
         }
 
         private void report(Outcome outcome) {
-            if (sample != null && REPORTED.compareAndSet(this, 0, 1)) {
-                sample.stop(outcome);
+            if (REPORTED.compareAndSet(this, 0, 1)) {
+                timers.record(sample, method, outcome);
             }
+        }
+    }
+
+    private enum Outcome {
+        SUCCESS, ERROR, CLOSED, TIMEOUT, CANCELLED;
+
+        private final String tag = name().toLowerCase(Locale.ROOT);
+    }
+
+    private final class RequestTimers {
+        private final String name;
+        private final String description;
+
+        // Looked up once per request, so cached rather than rebuilt: by method, then by outcome ordinal.
+        private final Map<String, Timer[]> byMethod = new ConcurrentHashMap<>();
+
+        RequestTimers(String name, String description) {
+            this.name = name;
+            this.description = description;
+        }
+
+        void record(Timer.Sample sample, String method, Outcome outcome) {
+            try {
+                sample.stop(timer(method, outcome));
+            } catch (RuntimeException ignored) {
+                // A registry can reject a meter (Prometheus does for a name already registered with
+                // other tag keys); that must not fail the request being measured.
+            }
+        }
+
+        private Timer timer(String method, Outcome outcome) {
+            Timer[] byOutcome = byMethod.computeIfAbsent(method, m -> new Timer[Outcome.values().length]);
+            Timer timer = byOutcome[outcome.ordinal()];
+            if (timer == null) {
+                // Racing threads register the same meter and the registry returns it to both.
+                timer = Timer.builder(name)
+                        .description(description)
+                        .tags(tags)
+                        .tag("method", method)
+                        .tag("outcome", outcome.tag)
+                        .register(Metrics.globalRegistry);
+                byOutcome[outcome.ordinal()] = timer;
+            }
+            return timer;
         }
     }
 }
