@@ -15,6 +15,12 @@
  */
 package io.moderne.jsonrpc;
 
+import io.micrometer.core.instrument.Meter;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.Timer;
+import io.micrometer.core.instrument.distribution.DistributionStatisticConfig;
+import io.micrometer.core.instrument.distribution.pause.PauseDetector;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.handler.HeaderDelimitedMessageHandler;
 import org.junit.jupiter.api.AfterEach;
@@ -28,19 +34,19 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static java.util.stream.Collectors.toList;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-class JsonRpcListenerTest {
-    RecordingListener listener = new RecordingListener();
+class JsonRpcMetricsTest {
+    SimpleMeterRegistry registry = new SimpleMeterRegistry();
 
     /**
-     * Sends to itself, so every request is observed both as sent and as received.
+     * Sends to itself, so every request is both a client and a server request.
      */
     JsonRpc loopback;
 
@@ -49,7 +55,7 @@ class JsonRpcListenerTest {
         PipedOutputStream os = new PipedOutputStream();
         PipedInputStream is = new PipedInputStream(os);
         loopback = new JsonRpc(new HeaderDelimitedMessageHandler(is, os), new JsonMessageFormatter())
-                .listener(listener);
+                .metrics(registry, Tags.of("peer", "loopback"));
     }
 
     @AfterEach
@@ -58,12 +64,23 @@ class JsonRpcListenerTest {
     }
 
     @Test
-    void successIsReportedOnBothSides() throws Exception {
+    void successIsRecordedOnBothSides() throws Exception {
         loopback.rpc("hello", handler(() -> "Hello")).bind()
                 .send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS);
 
-        listener.awaitEvents(2);
-        assertThat(listener.events).containsExactlyInAnyOrder("sent:hello:SUCCESS", "received:hello:SUCCESS");
+        awaitRecorded("jsonrpc.server.requests", "hello", "success");
+        assertThat(recorded("jsonrpc.client.requests")).containsExactly("hello:success");
+        assertThat(recorded("jsonrpc.server.requests")).containsExactly("hello:success");
+    }
+
+    @Test
+    void additionalTagsAreOnEveryTimer() throws Exception {
+        loopback.rpc("hello", handler(() -> "Hello")).bind()
+                .send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS);
+
+        awaitRecorded("jsonrpc.server.requests", "hello", "success");
+        assertThat(registry.find("jsonrpc.client.requests").tag("peer", "loopback").timers()).hasSize(1);
+        assertThat(registry.find("jsonrpc.server.requests").tag("peer", "loopback").timers()).hasSize(1);
     }
 
     @Test
@@ -73,12 +90,13 @@ class JsonRpcListenerTest {
         })).bind().send(JsonRpcRequest.newRequest("hello"));
 
         assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(JsonRpcException.class);
-        listener.awaitEvents(2);
-        assertThat(listener.events).containsExactlyInAnyOrder("sent:hello:ERROR", "received:hello:ERROR");
+        awaitRecorded("jsonrpc.server.requests", "hello", "error");
+        assertThat(recorded("jsonrpc.client.requests")).containsExactly("hello:error");
+        assertThat(recorded("jsonrpc.server.requests")).containsExactly("hello:error");
     }
 
     @Test
-    void callerTimeoutIsReportedInsteadOfTheLateResponse() throws Exception {
+    void callerTimeoutIsRecordedInsteadOfTheLateResponse() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         CompletableFuture<JsonRpcSuccess> response = loopback
                 .rpc("slow", handler(() -> {
@@ -92,50 +110,67 @@ class JsonRpcListenerTest {
         response.completeExceptionally(new TimeoutException());
         release.countDown();
 
-        // The late reply is on the wire once the receiving side reports it; a request sent after
+        // The late reply is on the wire once the server side records it; a request sent after
         // it is answered after it, so by then the late reply has been read.
-        listener.awaitEvent("received:slow:SUCCESS");
+        awaitRecorded("jsonrpc.server.requests", "slow", "success");
         loopback.send(JsonRpcRequest.newRequest("ping")).get(5, TimeUnit.SECONDS);
 
-        assertThat(listener.events).filteredOn(e -> e.startsWith("sent:slow")).containsExactly("sent:slow:TIMEOUT");
+        assertThat(recorded("jsonrpc.client.requests")).filteredOn(r -> r.startsWith("slow:"))
+                .containsExactly("slow:timeout");
     }
 
     @Test
-    void closedConnectionIsReportedAsClosed() throws Exception {
+    void closedConnectionIsRecordedAsClosed() throws Exception {
         JsonRpc closed = new JsonRpc(
                 new HeaderDelimitedMessageHandler(new ByteArrayInputStream(new byte[0]), new ByteArrayOutputStream()),
                 new JsonMessageFormatter())
-                .listener(listener)
+                .metrics(registry, Tags.empty())
                 .bind();
         try {
             CompletableFuture<JsonRpcSuccess> response = closed.send(JsonRpcRequest.newRequest("never-answered"));
 
             assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(JsonRpcException.class);
-            assertThat(listener.events).containsExactly("sent:never-answered:CLOSED");
+            assertThat(recorded("jsonrpc.client.requests")).containsExactly("never-answered:closed");
         } finally {
             closed.shutdown();
         }
     }
 
     @Test
-    void listenerExceptionsDoNotAffectRequests() throws Exception {
-        JsonRpcSuccess response = loopback.listener(new JsonRpcListener() {
-                    @Override
-                    public Completion requestSent(JsonRpcRequest request) {
-                        return outcome -> {
-                            throw new IllegalStateException("from completion");
-                        };
-                    }
+    void registryRejectingTheTimerDoesNotAffectRequests() throws Exception {
+        SimpleMeterRegistry rejecting = new SimpleMeterRegistry() {
+            @Override
+            protected Timer newTimer(Meter.Id id, DistributionStatisticConfig config, PauseDetector pauseDetector) {
+                throw new IllegalArgumentException("rejected");
+            }
+        };
 
-                    @Override
-                    public Completion requestReceived(JsonRpcRequest request) {
-                        throw new IllegalStateException("from start");
-                    }
-                })
+        JsonRpcSuccess response = loopback.metrics(rejecting, Tags.empty())
                 .rpc("hello", handler(() -> "Hello")).bind()
                 .send(JsonRpcRequest.newRequest("hello")).get(5, TimeUnit.SECONDS);
 
         assertThat(response.getResult(String.class)).isEqualTo("Hello");
+    }
+
+    /**
+     * Each recorded timer of the name, as {@code method:outcome}.
+     */
+    private List<String> recorded(String name) {
+        return registry.find(name).timers().stream()
+                .filter(t -> t.count() > 0)
+                .map(t -> t.getId().getTag("method") + ":" + t.getId().getTag("outcome"))
+                .collect(toList());
+    }
+
+    /**
+     * The server side records after writing its reply, which can land after the client has the
+     * response.
+     */
+    private void awaitRecorded(String name, String method, String outcome) throws InterruptedException {
+        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+        while (!recorded(name).contains(method + ":" + outcome) && System.nanoTime() < deadline) {
+            Thread.sleep(10);
+        }
     }
 
     private static JsonRpcMethod<Void> handler(Handler handler) {
@@ -150,37 +185,5 @@ class JsonRpcListenerTest {
     @FunctionalInterface
     private interface Handler {
         Object handle() throws Exception;
-    }
-
-    private static class RecordingListener implements JsonRpcListener {
-        final List<String> events = new CopyOnWriteArrayList<>();
-
-        @Override
-        public Completion requestSent(JsonRpcRequest request) {
-            return outcome -> events.add("sent:" + request.getMethod() + ":" + outcome);
-        }
-
-        @Override
-        public Completion requestReceived(JsonRpcRequest request) {
-            return outcome -> events.add("received:" + request.getMethod() + ":" + outcome);
-        }
-
-        /**
-         * The receiving side reports after sending its reply, which can land after the caller has
-         * the response.
-         */
-        void awaitEvents(int count) throws InterruptedException {
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (events.size() < count && System.nanoTime() < deadline) {
-                Thread.sleep(10);
-            }
-        }
-
-        void awaitEvent(String event) throws InterruptedException {
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (!events.contains(event) && System.nanoTime() < deadline) {
-                Thread.sleep(10);
-            }
-        }
     }
 }

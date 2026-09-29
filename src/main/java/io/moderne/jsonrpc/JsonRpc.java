@@ -15,11 +15,14 @@
  */
 package io.moderne.jsonrpc;
 
-import io.moderne.jsonrpc.JsonRpcListener.Completion;
-import io.moderne.jsonrpc.JsonRpcListener.Outcome;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tag;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.MessageHandler;
+import io.moderne.jsonrpc.internal.RequestMetrics;
+import io.moderne.jsonrpc.internal.RequestMetrics.Outcome;
+import io.moderne.jsonrpc.internal.RequestMetrics.Sample;
 import org.jspecify.annotations.Nullable;
 
 import java.io.EOFException;
@@ -45,7 +48,7 @@ public class JsonRpc {
     private final MessageFormatter formatter;
     private final Map<Object, OpenRequest> openRequests = new ConcurrentHashMap<>();
 
-    private volatile @Nullable JsonRpcListener listener;
+    private volatile @Nullable RequestMetrics metrics;
 
     /**
      * @deprecated Use {@link #JsonRpc(MessageHandler, MessageFormatter)} instead.
@@ -66,15 +69,19 @@ public class JsonRpc {
     }
 
     /**
-     * Observes the requests this sends and handles. Set it before {@link #bind()}.
+     * Times the requests this sends ({@code jsonrpc.client.requests}, until the response arrives)
+     * and handles ({@code jsonrpc.server.requests}, until the reply is written), tagged with
+     * {@code method}, {@code outcome} and {@code additionalTags}. Requires Micrometer on the
+     * classpath. Set it before {@link #bind()}.
      */
-    public JsonRpc listener(JsonRpcListener listener) {
-        this.listener = listener;
+    public JsonRpc metrics(MeterRegistry registry, Iterable<Tag> additionalTags) {
+        this.metrics = new RequestMetrics(registry, additionalTags);
         return this;
     }
 
     public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
-        OpenRequest open = new OpenRequest(started(request, true));
+        RequestMetrics m = metrics;
+        OpenRequest open = new OpenRequest(m == null ? null : m.startClient(request.getMethod()));
         openRequests.put(request.getId(), open);
         if (shutdown) {
             // Reader loop already exited (peer EOF or explicit shutdown) and
@@ -205,7 +212,8 @@ public class JsonRpc {
     }
 
     private void dispatch(JsonRpcRequest request, JsonRpcMethod<?> method) {
-        Completion completion = started(request, false);
+        RequestMetrics m = metrics;
+        Sample sample = m == null ? null : m.startServer(request.getMethod());
         Outcome outcome = Outcome.ERROR;
         JsonRpcMessage outbound;
         try {
@@ -226,27 +234,8 @@ public class JsonRpc {
         try {
             messageHandler.send(outbound, formatter);
         } finally {
-            report(completion, outcome);
-        }
-    }
-
-    private @Nullable Completion started(JsonRpcRequest request, boolean sent) {
-        JsonRpcListener l = listener;
-        if (l == null) {
-            return null;
-        }
-        try {
-            return sent ? l.requestSent(request) : l.requestReceived(request);
-        } catch (Exception ignored) {
-            return null;
-        }
-    }
-
-    private static void report(@Nullable Completion completion, Outcome outcome) {
-        if (completion != null) {
-            try {
-                completion.completed(outcome);
-            } catch (Exception ignored) {
+            if (sample != null) {
+                sample.stop(outcome);
             }
         }
     }
@@ -257,8 +246,8 @@ public class JsonRpc {
     }
 
     /**
-     * A request awaiting its response, which reports its outcome to the listener once. The reader
-     * and {@link #fail(Throwable)} say how it ended; the response completing any other way is the
+     * A request awaiting its response, which records its outcome once. The reader and
+     * {@link #fail(Throwable)} say how it ended; the response completing any other way is the
      * caller giving up on it.
      */
     private static final class OpenRequest {
@@ -266,12 +255,12 @@ public class JsonRpc {
                 AtomicIntegerFieldUpdater.newUpdater(OpenRequest.class, "reported");
 
         final CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
-        private final @Nullable Completion completion;
+        private final @Nullable Sample sample;
         private volatile int reported;
 
-        OpenRequest(@Nullable Completion completion) {
-            this.completion = completion;
-            if (completion != null) {
+        OpenRequest(@Nullable Sample sample) {
+            this.sample = sample;
+            if (sample != null) {
                 response.whenComplete((result, t) -> report(
                         t == null ? Outcome.SUCCESS :
                                 t instanceof TimeoutException ? Outcome.TIMEOUT :
@@ -291,8 +280,8 @@ public class JsonRpc {
         }
 
         private void report(Outcome outcome) {
-            if (completion != null && REPORTED.compareAndSet(this, 0, 1)) {
-                JsonRpc.report(completion, outcome);
+            if (sample != null && REPORTED.compareAndSet(this, 0, 1)) {
+                sample.stop(outcome);
             }
         }
     }
