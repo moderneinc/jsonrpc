@@ -15,6 +15,10 @@
  */
 package io.moderne.jsonrpc;
 
+import io.micrometer.core.instrument.Metrics;
+import io.micrometer.core.instrument.Tag;
+import io.micrometer.core.instrument.Tags;
+import io.micrometer.core.instrument.Timer;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import io.moderne.jsonrpc.handler.MessageHandler;
@@ -22,8 +26,10 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.EOFException;
 import java.io.IOException;
+import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.*;
+import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
 
 public class JsonRpc {
     private final ForkJoinPool forkJoin = new ForkJoinPool(
@@ -40,7 +46,9 @@ public class JsonRpc {
 
     private final MessageHandler messageHandler;
     private final MessageFormatter formatter;
-    private final Map<Object, CompletableFuture<JsonRpcSuccess>> openRequests = new ConcurrentHashMap<>();
+    private final Map<Object, OpenRequest> openRequests = new ConcurrentHashMap<>();
+
+    private volatile Iterable<Tag> tags = Tags.empty();
 
     /**
      * @deprecated Use {@link #JsonRpc(MessageHandler, MessageFormatter)} instead.
@@ -60,9 +68,19 @@ public class JsonRpc {
         return this;
     }
 
+    /**
+     * Added to the {@code method} and {@code outcome} tags of the timers this records for the
+     * requests it sends ({@code jsonrpc.client.requests}) and handles
+     * ({@code jsonrpc.server.requests}).
+     */
+    public JsonRpc tags(Iterable<Tag> tags) {
+        this.tags = tags;
+        return this;
+    }
+
     public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
-        CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
-        openRequests.put(request.getId(), response);
+        OpenRequest open = new OpenRequest(request.getMethod(), tags);
+        openRequests.put(request.getId(), open);
         if (shutdown) {
             // Reader loop already exited (peer EOF or explicit shutdown) and
             // may have drained openRequests before our put. Fail the future
@@ -70,11 +88,11 @@ public class JsonRpc {
             // observe our entry and failed it first.
             openRequests.remove(request.getId());
             Throwable cause = failure;
-            response.completeExceptionally(cause != null ? cause : peerClosed());
-            return response;
+            open.fail(cause != null ? cause : peerClosed(), Outcome.CLOSED);
+            return open.response;
         }
         messageHandler.send(request, formatter);
-        return response;
+        return open.response;
     }
 
     public void notify(JsonRpcRequest request) {
@@ -108,11 +126,11 @@ public class JsonRpc {
                     JsonRpcResponse response = (JsonRpcResponse) msg;
                     Object id = response.getId();
                     if (id != null) {
-                        CompletableFuture<JsonRpcSuccess> responseFuture = openRequests.remove(id);
+                        OpenRequest open = openRequests.remove(id);
                         if (response instanceof JsonRpcError) {
-                            responseFuture.completeExceptionally(new JsonRpcException((JsonRpcError) response));
+                            open.fail(new JsonRpcException((JsonRpcError) response), Outcome.ERROR);
                         } else if (response instanceof JsonRpcSuccess) {
-                            responseFuture.complete((JsonRpcSuccess) response);
+                            open.succeed((JsonRpcSuccess) response);
                         }
                     } else if (response instanceof JsonRpcError && !openRequests.isEmpty()) {
                         // Error with no id — fail all open requests since we
@@ -122,8 +140,8 @@ public class JsonRpc {
                         // expensive enough to peg a CPU when an upstream peer
                         // emits non-RPC noise on the wire.
                         JsonRpcException exception = new JsonRpcException((JsonRpcError) response);
-                        for (CompletableFuture<JsonRpcSuccess> future : openRequests.values()) {
-                            future.completeExceptionally(exception);
+                        for (OpenRequest open : openRequests.values()) {
+                            open.fail(exception, Outcome.ERROR);
                         }
                     }
                 } else if (msg instanceof JsonRpcRequest) {
@@ -181,8 +199,8 @@ public class JsonRpc {
     private void fail(Throwable cause) {
         failure = cause;
         shutdown = true;
-        for (CompletableFuture<JsonRpcSuccess> future : openRequests.values()) {
-            future.completeExceptionally(cause);
+        for (OpenRequest open : openRequests.values()) {
+            open.fail(cause, Outcome.CLOSED);
         }
         openRequests.clear();
     }
@@ -192,24 +210,89 @@ public class JsonRpc {
     }
 
     private void dispatch(JsonRpcRequest request, JsonRpcMethod<?> method) {
+        Timer.Sample sample = Timer.start(Metrics.globalRegistry);
+        Outcome outcome = Outcome.ERROR;
         JsonRpcMessage outbound;
         try {
             Object result = method.convertAndHandle(request.getParams(), formatter);
             // Wrap the handler's return value so the on-wire representation
             // goes through the same RawJson + Jackson serializer pipeline
             // as inbound-converted values.
-            outbound = result != null
-                    ? new JsonRpcSuccess(request.getId(), RawJson.of(result))
-                    : JsonRpcError.internalError(request.getId(), "Method returned null");
+            if (result != null) {
+                outbound = new JsonRpcSuccess(request.getId(), RawJson.of(result));
+                outcome = Outcome.SUCCESS;
+            } else {
+                outbound = JsonRpcError.internalError(request.getId(), "Method returned null");
+            }
         } catch (Throwable t) {
             // Errors included: the peer is blocked on this reply.
             outbound = JsonRpcError.internalError(request.getId(), t);
         }
-        messageHandler.send(outbound, formatter);
+        try {
+            messageHandler.send(outbound, formatter);
+        } finally {
+            record(sample, "jsonrpc.server.requests", tags, request.getMethod(), outcome);
+        }
     }
 
     public void shutdown() {
         shutdown = true;
         forkJoin.shutdownNow();
+    }
+
+    /**
+     * A request awaiting its response, which records its outcome once. The reader and
+     * {@link #fail(Throwable)} say how it ended; the response completing any other way is the
+     * caller giving up on it.
+     */
+    private static final class OpenRequest {
+        private static final AtomicIntegerFieldUpdater<OpenRequest> REPORTED =
+                AtomicIntegerFieldUpdater.newUpdater(OpenRequest.class, "reported");
+
+        final CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
+        private final String method;
+        private final Iterable<Tag> tags;
+        private final Timer.Sample sample = Timer.start(Metrics.globalRegistry);
+        private volatile int reported;
+
+        OpenRequest(String method, Iterable<Tag> tags) {
+            this.method = method;
+            this.tags = tags;
+            response.whenComplete((result, t) -> report(
+                    t == null ? Outcome.SUCCESS :
+                            t instanceof TimeoutException ? Outcome.TIMEOUT :
+                                    t instanceof CancellationException ? Outcome.CANCELLED :
+                                            Outcome.ERROR));
+        }
+
+        void succeed(JsonRpcSuccess success) {
+            report(Outcome.SUCCESS);
+            response.complete(success);
+        }
+
+        void fail(Throwable cause, Outcome outcome) {
+            report(outcome);
+            response.completeExceptionally(cause);
+        }
+
+        private void report(Outcome outcome) {
+            if (REPORTED.compareAndSet(this, 0, 1)) {
+                record(sample, "jsonrpc.client.requests", tags, method, outcome);
+            }
+        }
+    }
+
+    private static void record(Timer.Sample sample, String name, Iterable<Tag> tags, String method, Outcome outcome) {
+        sample.stop(Timer.builder(name)
+                .tags(tags)
+                .tag("method", method)
+                .tag("outcome", outcome.tag)
+                .register(Metrics.globalRegistry));
+    }
+
+    private enum Outcome {
+        SUCCESS, ERROR, CLOSED, TIMEOUT, CANCELLED;
+
+        private final String tag = name().toLowerCase(Locale.ROOT);
     }
 }

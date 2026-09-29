@@ -14,7 +14,7 @@ dependencies {
     api("org.jspecify:jspecify:latest.release")
 
     implementation("com.fasterxml.jackson.datatype:jackson-datatype-jsr310")
-    compileOnly("io.micrometer:micrometer-core:latest.release")
+    api("io.micrometer:micrometer-core:latest.release")
     implementation("com.fasterxml.jackson.module:jackson-module-parameter-names:2.21.1")
     testImplementation("org.openrewrite:rewrite-test:latest.release")
 }
