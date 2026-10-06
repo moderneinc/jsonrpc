@@ -29,6 +29,8 @@ import java.nio.charset.StandardCharsets;
 public interface MessageFormatter {
     JsonRpcMessage deserialize(InputStream in) throws IOException;
 
+    JsonRpcMessage deserialize(byte[] content, int offset, int length) throws IOException;
+
     void serialize(JsonRpcMessage message, OutputStream out) throws IOException;
 
     /**

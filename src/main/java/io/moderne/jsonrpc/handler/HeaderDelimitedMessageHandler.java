@@ -115,8 +115,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
                 totalRead += bytesRead;
             }
 
-            ByteArrayInputStream bis = new ByteArrayInputStream(content);
-            return effectiveFormatter.deserialize(bis);
+            return effectiveFormatter.deserialize(content, 0, content.length);
         } catch (EOFException | JsonRpcReceiveException e) {
             throw e;
         } catch (IOException e) {
