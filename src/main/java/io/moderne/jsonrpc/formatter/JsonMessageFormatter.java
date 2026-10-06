@@ -78,12 +78,20 @@ public class JsonMessageFormatter implements MessageFormatter {
 
     @Override
     public JsonRpcMessage deserialize(InputStream in) throws IOException {
-        // Streaming parser: walk the JSON object once, capture params/result/
-        // error structure into TokenBuffers (lazy materialization), and read
-        // scalars directly. Avoids the JSON → Map<String,Object> → POJO
-        // double-pass the original implementation paid on every message.
-        JsonParser parser = mapper.getFactory().createParser(in);
+        // Not closed: Jackson would close the caller's stream along with it.
+        return read(mapper.getFactory().createParser(in));
+    }
 
+    @Override
+    public JsonRpcMessage deserialize(byte[] content, int offset, int length) throws IOException {
+        // Closed, unlike the stream overload: there is no caller-owned source, and closing is what
+        // returns the parser's text and name buffers to Jackson's recycler.
+        try (JsonParser parser = mapper.getFactory().createParser(content, offset, length)) {
+            return read(parser);
+        }
+    }
+
+    private JsonRpcMessage read(JsonParser parser) throws IOException {
         Object id = null;
         String method = null;
         TokenBuffer params = null;
