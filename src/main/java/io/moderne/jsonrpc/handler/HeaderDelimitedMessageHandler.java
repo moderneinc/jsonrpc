@@ -38,6 +38,12 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     private final OutputStream outputStream;
 
     /**
+     * Reused across sends, trading per-message garbage for retaining roughly the largest
+     * message this handler has sent. Guarded by the {@code outputStream} monitor.
+     */
+    private final ByteArrayOutputStream sendBuffer = new ByteArrayOutputStream();
+
+    /**
      * Formatter stored for backwards compatibility with deprecated methods.
      */
     @Deprecated
@@ -148,20 +154,19 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     public void send(JsonRpcMessage msg, MessageFormatter formatter) {
         MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         try {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            effectiveFormatter.serialize(msg, bos);
-            // Synchronize writes so concurrent sends (e.g. from callback handlers
-            // and the main thread) don't interleave headers and content.
+            // Serialization stays inside the monitor because it guards sendBuffer, not just the
+            // header-and-body write; a send must therefore not nest, since the inner one would
+            // reset the buffer the outer is still filling.
             synchronized (outputStream) {
-                outputStream.write(("Content-Length: " + bos.size() + "\r\n").getBytes());
+                sendBuffer.reset();
+                effectiveFormatter.serialize(msg, sendBuffer);
+                outputStream.write(("Content-Length: " + sendBuffer.size() + "\r\n").getBytes());
                 if (effectiveFormatter.getEncoding() != StandardCharsets.UTF_8) {
                     outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + effectiveFormatter.getEncoding().name() + "\r\n").getBytes());
                 }
                 outputStream.write('\r');
                 outputStream.write('\n');
-                // Streams the accumulated buffer straight out. toByteArray would copy
-                // the whole message first, only to hand that copy to this same write.
-                bos.writeTo(outputStream);
+                sendBuffer.writeTo(outputStream);
                 outputStream.flush();
             }
         } catch (IOException e) {
