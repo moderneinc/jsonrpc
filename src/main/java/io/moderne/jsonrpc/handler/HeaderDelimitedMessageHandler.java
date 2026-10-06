@@ -43,6 +43,9 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
      */
     private final ByteArrayOutputStream sendBuffer = new ByteArrayOutputStream();
 
+    /** Reused across receives. Unguarded, unlike {@code sendBuffer}: only the reader loop calls {@link #receive}. */
+    private byte[] receiveBuffer = new byte[0];
+
     /**
      * Formatter stored for backwards compatibility with deprecated methods.
      */
@@ -77,6 +80,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
         MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         byte[] content = null;
+        int length = 0;
         try {
             // readLineFromInputStream throws EOFException when the peer has closed
             // the stream cleanly between messages; let that propagate so the reader
@@ -102,20 +106,24 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
                 }
             }
 
-            content = new byte[Integer.parseInt(contentLengthMatcher.group(1))];
-            for (int totalRead = 0; totalRead < content.length; ) {
-                int bytesRead = inputStream.read(content, totalRead, content.length - totalRead);
+            length = Integer.parseInt(contentLengthMatcher.group(1));
+            if (receiveBuffer.length < length) {
+                receiveBuffer = new byte[length];
+            }
+            content = receiveBuffer;
+            for (int totalRead = 0; totalRead < length; ) {
+                int bytesRead = inputStream.read(content, totalRead, length - totalRead);
                 if (bytesRead == -1) {
                     // Mid-message EOF — treat as a closed stream rather than a
                     // recoverable parse error, otherwise the loop spins on the
                     // already-closed pipe.
                     throw new EOFException("Stream closed mid-message after " + totalRead +
-                            " of " + content.length + " bytes");
+                            " of " + length + " bytes");
                 }
                 totalRead += bytesRead;
             }
 
-            return effectiveFormatter.deserialize(content, 0, content.length);
+            return effectiveFormatter.deserialize(content, 0, length);
         } catch (EOFException | JsonRpcReceiveException e) {
             throw e;
         } catch (IOException e) {
@@ -124,7 +132,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             // the peer rather than completing an unrelated open client future
             // (whose id might collide with the extracted id, or trigger the
             // null-id "fail all open requests" branch).
-            throw new JsonRpcReceiveException(IdExtractor.extractId(content),
+            throw new JsonRpcReceiveException(IdExtractor.extractId(content, length),
                     JsonRpcReceiveException.invalidRequestDetail(e.getMessage()));
         }
     }
