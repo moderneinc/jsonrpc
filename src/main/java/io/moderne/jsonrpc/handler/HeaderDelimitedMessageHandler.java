@@ -150,17 +150,18 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
         try {
             ByteArrayOutputStream bos = new ByteArrayOutputStream();
             effectiveFormatter.serialize(msg, bos);
-            byte[] content = bos.toByteArray();
             // Synchronize writes so concurrent sends (e.g. from callback handlers
             // and the main thread) don't interleave headers and content.
             synchronized (outputStream) {
-                outputStream.write(("Content-Length: " + content.length + "\r\n").getBytes());
+                outputStream.write(("Content-Length: " + bos.size() + "\r\n").getBytes());
                 if (effectiveFormatter.getEncoding() != StandardCharsets.UTF_8) {
                     outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + effectiveFormatter.getEncoding().name() + "\r\n").getBytes());
                 }
                 outputStream.write('\r');
                 outputStream.write('\n');
-                outputStream.write(content);
+                // Streams the accumulated buffer straight out. toByteArray would copy
+                // the whole message first, only to hand that copy to this same write.
+                bos.writeTo(outputStream);
                 outputStream.flush();
             }
         } catch (IOException e) {
