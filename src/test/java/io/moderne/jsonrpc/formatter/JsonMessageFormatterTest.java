@@ -16,11 +16,15 @@
 package io.moderne.jsonrpc.formatter;
 
 import io.moderne.jsonrpc.JsonRpcMessage;
+import io.moderne.jsonrpc.JsonRpcSuccess;
+import com.fasterxml.jackson.databind.exc.MismatchedInputException;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+
+import static java.nio.charset.StandardCharsets.UTF_8;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -53,6 +57,17 @@ public class JsonMessageFormatterTest {
     void idAsObjectFails() {
         assertThatThrownBy(() -> message("{\"jsonrpc\":\"2.0\",\"id\":[]}").getId())
                 .hasMessageContaining("MUST");
+    }
+
+    @Test
+    void aResultThatFailsToDecodeToItsExpectedTypeFailsOnConversion() throws IOException {
+        byte[] wire = "{\"jsonrpc\":\"2.0\",\"id\":\"a\",\"result\":{\"k\":1}}".getBytes(UTF_8);
+
+        JsonRpcSuccess success = (JsonRpcSuccess) formatter.deserialize(wire, 0, wire.length, id -> Integer.class);
+
+        assertThat(success.getId()).isEqualTo("a");
+        assertThatThrownBy(() -> success.getResult(Integer.class))
+                .hasRootCauseInstanceOf(MismatchedInputException.class);
     }
 
     private JsonRpcMessage message(String x) throws IOException {

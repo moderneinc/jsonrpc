@@ -25,11 +25,21 @@ import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Function;
 
 public interface MessageFormatter {
     JsonRpcMessage deserialize(InputStream in) throws IOException;
 
     JsonRpcMessage deserialize(byte[] content, int offset, int length) throws IOException;
+
+    /**
+     * @param resultTypes the type a response's result is decoded to, by the id of its request. A
+     *                    result decoded on arrival converts to that type without being read again.
+     */
+    default JsonRpcMessage deserialize(byte[] content, int offset, int length,
+                                       Function<Object, @Nullable Type> resultTypes) throws IOException {
+        return deserialize(content, offset, length);
+    }
 
     void serialize(JsonRpcMessage message, OutputStream out) throws IOException;
 

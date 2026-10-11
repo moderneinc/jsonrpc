@@ -26,6 +26,7 @@ import org.jspecify.annotations.Nullable;
 
 import java.io.EOFException;
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.*;
@@ -79,7 +80,15 @@ public class JsonRpc {
     }
 
     public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
-        OpenRequest open = new OpenRequest(request.getMethod(), tags);
+        return send(request, null);
+    }
+
+    /**
+     * @param resultType what the caller will convert the result to, which lets the formatter decode
+     *                   it once as the response arrives
+     */
+    public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request, @Nullable Type resultType) {
+        OpenRequest open = new OpenRequest(request.getMethod(), resultType, tags);
         openRequests.put(request.getId(), open);
         if (shutdown) {
             // Reader loop already exited (peer EOF or explicit shutdown) and
@@ -121,7 +130,7 @@ public class JsonRpc {
         while (!shutdown) {
             Object requestId = null;
             try {
-                JsonRpcMessage msg = messageHandler.receive(formatter);
+                JsonRpcMessage msg = messageHandler.receive(formatter, this::resultType);
                 if (msg instanceof JsonRpcResponse) {
                     JsonRpcResponse response = (JsonRpcResponse) msg;
                     Object id = response.getId();
@@ -191,6 +200,11 @@ public class JsonRpc {
         }
     }
 
+    private @Nullable Type resultType(Object id) {
+        OpenRequest open = openRequests.get(id);
+        return open == null ? null : open.resultType;
+    }
+
     /**
      * Stop reading and fail every request still waiting on a response. Shutdown is set
      * first so a concurrent {@link #send} observes it and fails its own future after the
@@ -251,12 +265,14 @@ public class JsonRpc {
 
         final CompletableFuture<JsonRpcSuccess> response = new CompletableFuture<>();
         private final String method;
+        final @Nullable Type resultType;
         private final Iterable<Tag> tags;
         private final Timer.Sample sample = Timer.start(Metrics.globalRegistry);
         private volatile int reported;
 
-        OpenRequest(String method, Iterable<Tag> tags) {
+        OpenRequest(String method, @Nullable Type resultType, Iterable<Tag> tags) {
             this.method = method;
+            this.resultType = resultType;
             this.tags = tags;
             response.whenComplete((result, t) -> report(
                     t == null ? Outcome.SUCCESS :

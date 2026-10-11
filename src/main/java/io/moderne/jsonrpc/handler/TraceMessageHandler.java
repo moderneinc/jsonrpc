@@ -20,9 +20,12 @@ import io.moderne.jsonrpc.JsonRpcRequest;
 import io.moderne.jsonrpc.JsonRpcResponse;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
 import lombok.RequiredArgsConstructor;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
 import java.io.PrintStream;
+import java.lang.reflect.Type;
+import java.util.function.Function;
 
 @RequiredArgsConstructor
 public class TraceMessageHandler implements MessageHandler {
@@ -36,7 +39,12 @@ public class TraceMessageHandler implements MessageHandler {
 
     @Override
     public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
-        JsonRpcMessage message = delegate.receive(formatter);
+        return receive(formatter, id -> null);
+    }
+
+    @Override
+    public JsonRpcMessage receive(MessageFormatter formatter, Function<Object, @Nullable Type> resultTypes) throws IOException {
+        JsonRpcMessage message = delegate.receive(formatter, resultTypes);
         if (message instanceof JsonRpcResponse) {
             out.printf("<-(%s)- %s%n", name, message);
         }
