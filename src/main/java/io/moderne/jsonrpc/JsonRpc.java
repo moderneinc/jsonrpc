@@ -31,6 +31,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicIntegerFieldUpdater;
+import java.util.function.Function;
 
 public class JsonRpc {
     private final ForkJoinPool forkJoin = new ForkJoinPool(
@@ -48,6 +49,7 @@ public class JsonRpc {
     private final MessageHandler messageHandler;
     private final MessageFormatter formatter;
     private final Map<Object, OpenRequest> openRequests = new ConcurrentHashMap<>();
+    private final Function<Object, @Nullable Type> resultTypes = this::resultType;
 
     private volatile Iterable<Tag> tags = Tags.empty();
 
@@ -130,7 +132,7 @@ public class JsonRpc {
         while (!shutdown) {
             Object requestId = null;
             try {
-                JsonRpcMessage msg = messageHandler.receive(formatter, this::resultType);
+                JsonRpcMessage msg = messageHandler.receive(formatter, resultTypes);
                 if (msg instanceof JsonRpcResponse) {
                     JsonRpcResponse response = (JsonRpcResponse) msg;
                     Object id = response.getId();

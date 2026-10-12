@@ -98,7 +98,7 @@ public class JsonRpcTest {
                 .send(JsonRpcRequest.newRequest("echo", new Person("Jon")), Person.class)
                 .get(5, TimeUnit.SECONDS);
 
-        // Converting a buffered result would build a new Person each time.
+        // A result decoded on arrival is handed out as decoded.
         assertThat(response.getResult(Person.class))
                 .isEqualTo(new Person("Jon"))
                 .isSameAs(response.getResult(Person.class));

@@ -20,10 +20,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonValue;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.type.TypeFactory;
 import com.fasterxml.jackson.databind.util.TokenBuffer;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
@@ -140,7 +142,7 @@ public class JsonMessageFormatter implements MessageFormatter {
                     // Only possible when the id precedes the result, as vscode-jsonrpc and this library write it.
                     Type resultType = id == null ? null : resultTypes.apply(id);
                     JsonToken t = parser.currentToken();
-                    if (resultType != null) {
+                    if (resultType != null && t != JsonToken.VALUE_NULL) {
                         Decoded decoded = decode(parser, resultType);
                         resultBuffer = decoded;
                         if (decoded.failure != null) {
@@ -176,10 +178,14 @@ public class JsonMessageFormatter implements MessageFormatter {
         return JsonRpcSuccess.fromPayload(id, null, this);
     }
 
-    private Decoded decode(JsonParser parser, Type type) {
+    /**
+     * A failure to map the result to its type fails only that result, as it would on conversion.
+     * Malformed JSON fails the whole message.
+     */
+    private Decoded decode(JsonParser parser, Type type) throws IOException {
         try {
             return new Decoded(mapper.readValue(parser, mapper.getTypeFactory().constructType(type)), type, null);
-        } catch (IOException | RuntimeException e) {
+        } catch (JsonMappingException | RuntimeException | StackOverflowError | LinkageError e) {
             return new Decoded(null, type, e);
         }
     }
@@ -225,7 +231,7 @@ public class JsonMessageFormatter implements MessageFormatter {
             if (decoded.failure != null) {
                 throw new RuntimeException("Failed to convert result to " + decoded.type, decoded.failure);
             }
-            return decoded.type.equals(type) ? (T) decoded.value :
+            return decoded.type.equals(type) || type == TypeFactory.rawClass(decoded.type) ? (T) decoded.value :
                     mapper.convertValue(decoded.value, mapper.getTypeFactory().constructType(type));
         }
         if (inner instanceof TokenBuffer) {
@@ -248,9 +254,9 @@ public class JsonMessageFormatter implements MessageFormatter {
         final @Nullable Object value;
 
         final Type type;
-        final @Nullable Exception failure;
+        final @Nullable Throwable failure;
 
-        Decoded(@Nullable Object value, Type type, @Nullable Exception failure) {
+        Decoded(@Nullable Object value, Type type, @Nullable Throwable failure) {
             this.value = value;
             this.type = type;
             this.failure = failure;
