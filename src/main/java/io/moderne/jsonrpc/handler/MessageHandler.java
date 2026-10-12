@@ -17,9 +17,12 @@ package io.moderne.jsonrpc.handler;
 
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
+import org.jspecify.annotations.Nullable;
 
 import java.io.EOFException;
 import java.io.IOException;
+import java.lang.reflect.Type;
+import java.util.function.Function;
 
 public interface MessageHandler {
 
@@ -29,6 +32,13 @@ public interface MessageHandler {
      * @throws IOException  for unrecoverable transport failures.
      */
     JsonRpcMessage receive(MessageFormatter formatter) throws IOException;
+
+    /**
+     * @param resultTypes passed on to {@link MessageFormatter#deserialize(byte[], int, int, Function)}
+     */
+    default JsonRpcMessage receive(MessageFormatter formatter, Function<Object, @Nullable Type> resultTypes) throws IOException {
+        return receive(formatter);
+    }
 
     void send(JsonRpcMessage msg, MessageFormatter formatter);
 }

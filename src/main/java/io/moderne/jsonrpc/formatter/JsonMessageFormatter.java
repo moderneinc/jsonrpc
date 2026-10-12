@@ -17,12 +17,15 @@ package io.moderne.jsonrpc.formatter;
 
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonValue;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
+import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.json.JsonMapper;
+import com.fasterxml.jackson.databind.type.TypeFactory;
 import com.fasterxml.jackson.databind.util.TokenBuffer;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import com.fasterxml.jackson.module.paramnames.ParameterNamesModule;
@@ -37,6 +40,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Type;
+import java.util.function.Function;
 
 public class JsonMessageFormatter implements MessageFormatter {
     private final ObjectMapper mapper;
@@ -79,25 +83,31 @@ public class JsonMessageFormatter implements MessageFormatter {
     @Override
     public JsonRpcMessage deserialize(InputStream in) throws IOException {
         // Not closed: Jackson would close the caller's stream along with it.
-        return read(mapper.getFactory().createParser(in));
+        return read(mapper.getFactory().createParser(in), id -> null);
     }
 
     @Override
     public JsonRpcMessage deserialize(byte[] content, int offset, int length) throws IOException {
+        return deserialize(content, offset, length, id -> null);
+    }
+
+    @Override
+    public JsonRpcMessage deserialize(byte[] content, int offset, int length,
+                                      Function<Object, @Nullable Type> resultTypes) throws IOException {
         // Closed, unlike the stream overload: there is no caller-owned source, and closing is what
         // returns the parser's text and name buffers to Jackson's recycler.
         try (JsonParser parser = mapper.getFactory().createParser(content, offset, length)) {
-            return read(parser);
+            return read(parser, resultTypes);
         }
     }
 
-    private JsonRpcMessage read(JsonParser parser) throws IOException {
+    private JsonRpcMessage read(JsonParser parser, Function<Object, @Nullable Type> resultTypes) throws IOException {
         Object id = null;
         String method = null;
         TokenBuffer params = null;
         TokenBuffer errorBuffer = null;
         Object resultScalar = null;
-        TokenBuffer resultBuffer = null;
+        Object resultBuffer = null;
         boolean haveResultField = false;
 
         if (parser.nextToken() != JsonToken.START_OBJECT) {
@@ -129,8 +139,17 @@ public class JsonMessageFormatter implements MessageFormatter {
                     break;
                 case "result":
                     haveResultField = true;
+                    // Only possible when the id precedes the result, as vscode-jsonrpc and this library write it.
+                    Type resultType = id == null ? null : resultTypes.apply(id);
                     JsonToken t = parser.currentToken();
-                    if (t == JsonToken.START_OBJECT || t == JsonToken.START_ARRAY) {
+                    if (resultType != null && t != JsonToken.VALUE_NULL) {
+                        Decoded decoded = decode(parser, resultType);
+                        resultBuffer = decoded;
+                        if (decoded.failure != null) {
+                            // The parser stopped somewhere inside the result.
+                            return JsonRpcSuccess.fromPayload(id, RawJson.of(decoded), this);
+                        }
+                    } else if (t == JsonToken.START_OBJECT || t == JsonToken.START_ARRAY) {
                         resultBuffer = captureValue(parser);
                     } else {
                         // Primitive — read directly without buffering.
@@ -157,6 +176,18 @@ public class JsonMessageFormatter implements MessageFormatter {
         // No method, no error, no result — treat as a success with null result
         // (matches the prior {@code mapper.convertValue} fallback behavior).
         return JsonRpcSuccess.fromPayload(id, null, this);
+    }
+
+    /**
+     * A failure to map the result to its type fails only that result, as it would on conversion.
+     * Malformed JSON fails the whole message.
+     */
+    private Decoded decode(JsonParser parser, Type type) throws IOException {
+        try {
+            return new Decoded(mapper.readValue(parser, mapper.getTypeFactory().constructType(type)), type, null);
+        } catch (JsonMappingException | RuntimeException | StackOverflowError | LinkageError e) {
+            return new Decoded(null, type, e);
+        }
     }
 
     private TokenBuffer captureValue(JsonParser parser) throws IOException {
@@ -195,6 +226,14 @@ public class JsonMessageFormatter implements MessageFormatter {
         if (inner == null) {
             return null;
         }
+        if (inner instanceof Decoded) {
+            Decoded decoded = (Decoded) inner;
+            if (decoded.failure != null) {
+                throw new RuntimeException("Failed to convert result to " + decoded.type, decoded.failure);
+            }
+            return decoded.type.equals(type) || type == TypeFactory.rawClass(decoded.type) ? (T) decoded.value :
+                    mapper.convertValue(decoded.value, mapper.getTypeFactory().constructType(type));
+        }
         if (inner instanceof TokenBuffer) {
             try {
                 JsonParser bufferParser = ((TokenBuffer) inner).asParser();
@@ -205,5 +244,22 @@ public class JsonMessageFormatter implements MessageFormatter {
             }
         }
         return (T) mapper.convertValue(inner, mapper.getTypeFactory().constructType(type));
+    }
+
+    /**
+     * A result decoded to the type its request expected, or the failure to decode it.
+     */
+    static final class Decoded {
+        @JsonValue
+        final @Nullable Object value;
+
+        final Type type;
+        final @Nullable Throwable failure;
+
+        Decoded(@Nullable Object value, Type type, @Nullable Throwable failure) {
+            this.value = value;
+            this.type = type;
+            this.failure = failure;
+        }
     }
 }

@@ -21,7 +21,9 @@ import io.moderne.jsonrpc.formatter.MessageFormatter;
 import org.jspecify.annotations.Nullable;
 
 import java.io.*;
+import java.lang.reflect.Type;
 import java.nio.charset.StandardCharsets;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -78,6 +80,11 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
 
     @Override
     public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
+        return receive(formatter, id -> null);
+    }
+
+    @Override
+    public JsonRpcMessage receive(MessageFormatter formatter, Function<Object, @Nullable Type> resultTypes) throws IOException {
         MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         byte[] content = null;
         int length = 0;
@@ -123,7 +130,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
                 totalRead += bytesRead;
             }
 
-            return effectiveFormatter.deserialize(content, 0, length);
+            return effectiveFormatter.deserialize(content, 0, length, resultTypes);
         } catch (EOFException | JsonRpcReceiveException e) {
             throw e;
         } catch (IOException e) {

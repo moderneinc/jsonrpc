@@ -86,6 +86,25 @@ public class JsonRpcTest {
     }
 
     @Test
+    void aResultTypeGivenToSendIsDecodedOnArrival() throws Exception {
+        JsonRpcSuccess response = jsonRpc
+                .rpc("echo", new JsonRpcMethod<Person>() {
+                    @Override
+                    protected Object handle(Person person) {
+                        return person;
+                    }
+                })
+                .bind()
+                .send(JsonRpcRequest.newRequest("echo", new Person("Jon")), Person.class)
+                .get(5, TimeUnit.SECONDS);
+
+        // A result decoded on arrival is handed out as decoded.
+        assertThat(response.getResult(Person.class))
+                .isEqualTo(new Person("Jon"))
+                .isSameAs(response.getResult(Person.class));
+    }
+
+    @Test
     void rpcThrowsException() {
         assertThatThrownBy(() -> jsonRpc
                 .rpc("hello", new JsonRpcMethod<Person>() {
