@@ -38,6 +38,15 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     private final OutputStream outputStream;
 
     /**
+     * Reused across sends, trading per-message garbage for retaining roughly the largest
+     * message this handler has sent. Guarded by the {@code outputStream} monitor.
+     */
+    private final ByteArrayOutputStream sendBuffer = new ByteArrayOutputStream();
+
+    /** Reused across receives. Unguarded, unlike {@code sendBuffer}: only the reader loop calls {@link #receive}. */
+    private byte[] receiveBuffer = new byte[0];
+
+    /**
      * Formatter stored for backwards compatibility with deprecated methods.
      */
     @Deprecated
@@ -71,6 +80,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
         MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         byte[] content = null;
+        int length = 0;
         try {
             // readLineFromInputStream throws EOFException when the peer has closed
             // the stream cleanly between messages; let that propagate so the reader
@@ -96,21 +106,24 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
                 }
             }
 
-            content = new byte[Integer.parseInt(contentLengthMatcher.group(1))];
-            for (int totalRead = 0; totalRead < content.length; ) {
-                int bytesRead = inputStream.read(content, totalRead, content.length - totalRead);
+            length = Integer.parseInt(contentLengthMatcher.group(1));
+            if (receiveBuffer.length < length) {
+                receiveBuffer = new byte[length];
+            }
+            content = receiveBuffer;
+            for (int totalRead = 0; totalRead < length; ) {
+                int bytesRead = inputStream.read(content, totalRead, length - totalRead);
                 if (bytesRead == -1) {
                     // Mid-message EOF — treat as a closed stream rather than a
                     // recoverable parse error, otherwise the loop spins on the
                     // already-closed pipe.
                     throw new EOFException("Stream closed mid-message after " + totalRead +
-                            " of " + content.length + " bytes");
+                            " of " + length + " bytes");
                 }
                 totalRead += bytesRead;
             }
 
-            ByteArrayInputStream bis = new ByteArrayInputStream(content);
-            return effectiveFormatter.deserialize(bis);
+            return effectiveFormatter.deserialize(content, 0, length);
         } catch (EOFException | JsonRpcReceiveException e) {
             throw e;
         } catch (IOException e) {
@@ -119,7 +132,7 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
             // the peer rather than completing an unrelated open client future
             // (whose id might collide with the extracted id, or trigger the
             // null-id "fail all open requests" branch).
-            throw new JsonRpcReceiveException(IdExtractor.extractId(content),
+            throw new JsonRpcReceiveException(IdExtractor.extractId(content, length),
                     JsonRpcReceiveException.invalidRequestDetail(e.getMessage()));
         }
     }
@@ -148,19 +161,19 @@ public class HeaderDelimitedMessageHandler implements MessageHandler {
     public void send(JsonRpcMessage msg, MessageFormatter formatter) {
         MessageFormatter effectiveFormatter = this.formatter != null ? this.formatter : formatter;
         try {
-            ByteArrayOutputStream bos = new ByteArrayOutputStream();
-            effectiveFormatter.serialize(msg, bos);
-            byte[] content = bos.toByteArray();
-            // Synchronize writes so concurrent sends (e.g. from callback handlers
-            // and the main thread) don't interleave headers and content.
+            // Serialization stays inside the monitor because it guards sendBuffer, not just the
+            // header-and-body write; a send must therefore not nest, since the inner one would
+            // reset the buffer the outer is still filling.
             synchronized (outputStream) {
-                outputStream.write(("Content-Length: " + content.length + "\r\n").getBytes());
+                sendBuffer.reset();
+                effectiveFormatter.serialize(msg, sendBuffer);
+                outputStream.write(("Content-Length: " + sendBuffer.size() + "\r\n").getBytes());
                 if (effectiveFormatter.getEncoding() != StandardCharsets.UTF_8) {
                     outputStream.write(("Content-Type: application/vscode-jsonrpc;charset=" + effectiveFormatter.getEncoding().name() + "\r\n").getBytes());
                 }
                 outputStream.write('\r');
                 outputStream.write('\n');
-                outputStream.write(content);
+                sendBuffer.writeTo(outputStream);
                 outputStream.flush();
             }
         } catch (IOException e) {

@@ -37,10 +37,15 @@ final class IdExtractor {
     }
 
     static @Nullable Object extractId(byte @Nullable [] content) {
-        if (content == null) {
+        return extractId(content, content == null ? 0 : content.length);
+    }
+
+    /** @param length {@code content} may be a reused buffer whose tail still holds the previous message. */
+    static @Nullable Object extractId(byte @Nullable [] content, int length) {
+        if (content == null || length <= 0) {
             return null;
         }
-        try (JsonParser parser = JSON_FACTORY.createParser(content)) {
+        try (JsonParser parser = JSON_FACTORY.createParser(content, 0, length)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 return null;
             }

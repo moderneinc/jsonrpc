@@ -16,6 +16,7 @@
 package io.moderne.jsonrpc.handler;
 
 import io.moderne.jsonrpc.JsonRpcReceiveException;
+import io.moderne.jsonrpc.JsonRpcRequest;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import org.junit.jupiter.api.Test;
 
@@ -24,6 +25,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.InputStream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class HeaderDelimitedMessageHandlerTest {
@@ -62,5 +64,26 @@ class HeaderDelimitedMessageHandlerTest {
 
         assertThatThrownBy(() -> handler.receive(FORMATTER))
                 .isInstanceOf(EOFException.class);
+    }
+
+    /** receive() reuses one body buffer, so a decoded message must not be a view onto it. */
+    @Test
+    void anEarlierMessageSurvivesTheBufferBeingReused() throws Exception {
+        String first = "a".repeat(4096);
+        String second = "b".repeat(4096);
+        ByteArrayOutputStream wire = new ByteArrayOutputStream();
+        HeaderDelimitedMessageHandler writer = new HeaderDelimitedMessageHandler(
+                new ByteArrayInputStream(new byte[0]), wire);
+        writer.send(JsonRpcRequest.newRequest("m", first), FORMATTER);
+        writer.send(JsonRpcRequest.newRequest("m", second), FORMATTER);
+
+        HeaderDelimitedMessageHandler reader = new HeaderDelimitedMessageHandler(
+                new ByteArrayInputStream(wire.toByteArray()), new ByteArrayOutputStream());
+        JsonRpcRequest a = (JsonRpcRequest) reader.receive(FORMATTER);
+        JsonRpcRequest b = (JsonRpcRequest) reader.receive(FORMATTER);
+
+        // a is read last, after b's bytes have landed in the same buffer.
+        assertThat(b.getParams().as(FORMATTER, String.class)).isEqualTo(second);
+        assertThat(a.getParams().as(FORMATTER, String.class)).isEqualTo(first);
     }
 }
