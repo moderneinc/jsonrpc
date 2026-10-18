@@ -81,6 +81,10 @@ public class JsonRpc {
         return this;
     }
 
+    /**
+     * A caller that knows the result type can pass it to {@link #send(JsonRpcRequest, Type)}, which
+     * decodes the result once, as the response arrives.
+     */
     public CompletableFuture<JsonRpcSuccess> send(JsonRpcRequest request) {
         return send(request, null);
     }
