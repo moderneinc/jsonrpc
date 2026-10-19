@@ -22,9 +22,12 @@ import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.JsonRpcRequest;
 import io.moderne.jsonrpc.JsonRpcSuccess;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
+import org.jspecify.annotations.Nullable;
 
 import java.io.IOException;
+import java.lang.reflect.Type;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 
 public class MeteredMessageHandler implements MessageHandler {
     /**
@@ -64,8 +67,13 @@ public class MeteredMessageHandler implements MessageHandler {
 
     @Override
     public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
+        return receive(formatter, id -> null);
+    }
+
+    @Override
+    public JsonRpcMessage receive(MessageFormatter formatter, Function<Object, @Nullable Type> resultTypes) throws IOException {
         Timer.Sample sample = Timer.start(meterRegistry);
-        JsonRpcMessage msg = delegate.receive(formatter);
+        JsonRpcMessage msg = delegate.receive(formatter, resultTypes);
         Timer timer = timerFor(true, msg);
         if (timer != null) {
             sample.stop(timer);
