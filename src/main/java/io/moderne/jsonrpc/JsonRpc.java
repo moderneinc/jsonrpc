@@ -254,6 +254,13 @@ public class JsonRpc {
             if (request.getId() != null) {
                 messageHandler.send(outbound, formatter);
             }
+        } catch (Throwable t) {
+            if (!(outbound instanceof JsonRpcSuccess)) {
+                throw t;
+            }
+            // A result that can't be serialized reaches the peer as an error.
+            outcome = Outcome.ERROR;
+            messageHandler.send(JsonRpcError.internalError(request.getId(), t), formatter);
         } finally {
             record(sample, "jsonrpc.server.requests", tags, request.getMethod(), outcome);
         }
