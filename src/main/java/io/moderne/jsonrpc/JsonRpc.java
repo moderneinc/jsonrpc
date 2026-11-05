@@ -110,8 +110,12 @@ public class JsonRpc {
         return open.response;
     }
 
+    /**
+     * Sends the request without its id, which makes it a notification the peer doesn't answer.
+     */
     public void notify(JsonRpcRequest request) {
-        messageHandler.send(request, formatter);
+        messageHandler.send(request.getId() == null ? request :
+                new JsonRpcRequest(null, request.getMethod(), request.getParams()), formatter);
     }
 
     public JsonRpc bind() {
@@ -142,6 +146,9 @@ public class JsonRpc {
                     Object id = response.getId();
                     if (id != null) {
                         OpenRequest open = openRequests.remove(id);
+                        if (open == null) {
+                            continue;
+                        }
                         if (response instanceof JsonRpcError) {
                             open.fail(new JsonRpcException((JsonRpcError) response), Outcome.ERROR);
                         } else if (response instanceof JsonRpcSuccess) {
@@ -163,7 +170,9 @@ public class JsonRpc {
                     JsonRpcRequest request = (JsonRpcRequest) msg;
                     requestId = request.getId();
                     JsonRpcMethod<?> method = methods.get(request.getMethod());
-                    if (method == null) {
+                    if (method != null) {
+                        ForkJoinTask.adapt(() -> dispatch(request, method)).fork();
+                    } else if (request.getId() != null) {
                         // Fork error sends off the reader thread to avoid
                         // deadlock with synchronized send()
                         Object errorId = request.getId();
@@ -171,8 +180,6 @@ public class JsonRpc {
                         ForkJoinTask.adapt(() ->
                                 messageHandler.send(JsonRpcError.methodNotFound(errorId, errorMethod), formatter)
                         ).fork();
-                    } else {
-                        ForkJoinTask.adapt(() -> dispatch(request, method)).fork();
                     }
                 }
             } catch (EOFException e) {
