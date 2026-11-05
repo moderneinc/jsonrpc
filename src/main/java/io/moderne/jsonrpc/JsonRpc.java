@@ -249,7 +249,11 @@ public class JsonRpc {
             outbound = JsonRpcError.internalError(request.getId(), t);
         }
         try {
-            messageHandler.send(outbound, formatter);
+            // JSON-RPC 2.0 forbids replying to a notification. A null-id error can't be
+            // correlated, so the peer would fail every request it has open.
+            if (request.getId() != null) {
+                messageHandler.send(outbound, formatter);
+            }
         } finally {
             record(sample, "jsonrpc.server.requests", tags, request.getMethod(), outcome);
         }
