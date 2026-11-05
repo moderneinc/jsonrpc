@@ -102,6 +102,42 @@ class JsonRpcMetricsTest {
     }
 
     @Test
+    void failingNotificationIsRecordedWithoutFailingRequestsInFlight() throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<JsonRpcSuccess> inFlight = loopback
+                .rpc("slow", handler(() -> {
+                    release.await();
+                    return "done";
+                }))
+                .rpc("boom", handler(() -> {
+                    throw new IllegalStateException("Boom");
+                }))
+                .bind()
+                .send(JsonRpcRequest.newRequest("slow"));
+
+        loopback.notify(new JsonRpcRequest(null, "boom", null));
+        // A reply to the notification would be on the wire ahead of the in-flight request's.
+        awaitRecorded("jsonrpc.server.requests", "boom", "error");
+        release.countDown();
+
+        assertThat(inFlight.get(5, TimeUnit.SECONDS).getResult(String.class)).isEqualTo("done");
+        assertThat(recorded("jsonrpc.server.requests")).contains("boom:error");
+    }
+
+    @Test
+    void nullResultIsASuccessOnlyForANotification() throws Exception {
+        loopback.rpc("hello", handler(() -> null)).bind()
+                .notify(new JsonRpcRequest(null, "hello", null));
+        awaitRecorded("jsonrpc.server.requests", "hello", "success");
+
+        CompletableFuture<JsonRpcSuccess> response = loopback.send(JsonRpcRequest.newRequest("hello"));
+        assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(JsonRpcException.class);
+        awaitRecorded("jsonrpc.server.requests", "hello", "error");
+
+        assertThat(recorded("jsonrpc.server.requests")).containsExactlyInAnyOrder("hello:success", "hello:error");
+    }
+
+    @Test
     void callerTimeoutIsRecordedInsteadOfTheLateResponse() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         CompletableFuture<JsonRpcSuccess> response = loopback

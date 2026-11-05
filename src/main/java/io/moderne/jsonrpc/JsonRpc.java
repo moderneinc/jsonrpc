@@ -110,6 +110,10 @@ public class JsonRpc {
         return open.response;
     }
 
+    /**
+     * Only a request with a null id is a notification, which the peer doesn't answer. A reply to
+     * one with an id matches no open request and is dropped.
+     */
     public void notify(JsonRpcRequest request) {
         messageHandler.send(request, formatter);
     }
@@ -142,6 +146,9 @@ public class JsonRpc {
                     Object id = response.getId();
                     if (id != null) {
                         OpenRequest open = openRequests.remove(id);
+                        if (open == null) {
+                            continue;
+                        }
                         if (response instanceof JsonRpcError) {
                             open.fail(new JsonRpcException((JsonRpcError) response), Outcome.ERROR);
                         } else if (response instanceof JsonRpcSuccess) {
@@ -163,7 +170,9 @@ public class JsonRpc {
                     JsonRpcRequest request = (JsonRpcRequest) msg;
                     requestId = request.getId();
                     JsonRpcMethod<?> method = methods.get(request.getMethod());
-                    if (method == null) {
+                    if (method != null) {
+                        ForkJoinTask.adapt(() -> dispatch(request, method)).fork();
+                    } else if (request.getId() != null) {
                         // Fork error sends off the reader thread to avoid
                         // deadlock with synchronized send()
                         Object errorId = request.getId();
@@ -171,8 +180,6 @@ public class JsonRpc {
                         ForkJoinTask.adapt(() ->
                                 messageHandler.send(JsonRpcError.methodNotFound(errorId, errorMethod), formatter)
                         ).fork();
-                    } else {
-                        ForkJoinTask.adapt(() -> dispatch(request, method)).fork();
                     }
                 }
             } catch (EOFException e) {
@@ -243,13 +250,19 @@ public class JsonRpc {
                 outcome = Outcome.SUCCESS;
             } else {
                 outbound = JsonRpcError.internalError(request.getId(), "Method returned null");
+                // A notification sends no result, so its handler needn't return one.
+                outcome = request.getId() == null ? Outcome.SUCCESS : Outcome.ERROR;
             }
         } catch (Throwable t) {
             // Errors included: the peer is blocked on this reply.
             outbound = JsonRpcError.internalError(request.getId(), t);
         }
         try {
-            messageHandler.send(outbound, formatter);
+            // JSON-RPC 2.0 forbids replying to a notification. A null-id error can't be
+            // correlated, so the peer would fail every request it has open.
+            if (request.getId() != null) {
+                messageHandler.send(outbound, formatter);
+            }
         } catch (Throwable t) {
             if (!(outbound instanceof JsonRpcSuccess)) {
                 throw t;

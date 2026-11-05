@@ -41,16 +41,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 public class JsonRpcTest {
+    JsonMessageFormatter formatter = new JsonMessageFormatter();
+    MessageHandler handler;
     JsonRpc jsonRpc;
 
     @BeforeEach
     void before() throws IOException {
         PipedOutputStream os = new PipedOutputStream();
         PipedInputStream is = new PipedInputStream(os);
-        JsonMessageFormatter formatter = new JsonMessageFormatter();
-        jsonRpc = new JsonRpc(
-                new TraceMessageHandler("both", new HeaderDelimitedMessageHandler(is, os)),
-                formatter);
+        handler = new TraceMessageHandler("both", new HeaderDelimitedMessageHandler(is, os));
+        jsonRpc = new JsonRpc(handler, formatter);
     }
 
     @AfterEach
@@ -181,6 +181,39 @@ public class JsonRpcTest {
                 .bind()
                 .notify(JsonRpcRequest.newRequest("hello", new Person("Jon")));
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
+    }
+
+    @Test
+    void notificationToAnUnknownMethodLeavesRequestsInFlightAlone() throws Exception {
+        assertLeavesRequestsInFlightAlone(() -> jsonRpc.notify(new JsonRpcRequest(null, "unknown", null)));
+    }
+
+    @Test
+    void replyToNoOpenRequestLeavesRequestsInFlightAlone() throws Exception {
+        assertLeavesRequestsInFlightAlone(() -> handler.send(new JsonRpcSuccess("stray", null), formatter));
+    }
+
+    private void assertLeavesRequestsInFlightAlone(Runnable trigger) throws Exception {
+        CountDownLatch release = new CountDownLatch(1);
+        CompletableFuture<JsonRpcSuccess> inFlight = jsonRpc
+                .rpc("slow", new JsonRpcMethod<Void>() {
+                    @Override
+                    protected Object handle(Void params) throws Exception {
+                        release.await();
+                        return "done";
+                    }
+                })
+                .rpc("hello", new HelloController())
+                .bind()
+                .send(JsonRpcRequest.newRequest("slow"));
+
+        trigger.run();
+        // An error the trigger draws is forked before this request is read, so this round trip
+        // gives it time to reach the wire ahead of the slow reply.
+        jsonRpc.send(JsonRpcRequest.newRequest("hello", new Person("Jon"))).get(5, TimeUnit.SECONDS);
+        release.countDown();
+
+        assertThat(inFlight.get(5, TimeUnit.SECONDS).getResult(String.class)).isEqualTo("done");
     }
 
     @Test
