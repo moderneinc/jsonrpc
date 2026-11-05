@@ -91,6 +91,17 @@ class JsonRpcMetricsTest {
     }
 
     @Test
+    void resultThatFailsToSerializeIsAnErrorOnBothSides() throws Exception {
+        CompletableFuture<JsonRpcSuccess> response = loopback.rpc("hello", handler(SelfReferencing::new))
+                .bind().send(JsonRpcRequest.newRequest("hello"));
+
+        assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS)).hasCauseInstanceOf(JsonRpcException.class);
+        awaitRecorded("jsonrpc.server.requests", "hello", "error");
+        assertThat(recorded("jsonrpc.client.requests")).containsExactly("hello:error");
+        assertThat(recorded("jsonrpc.server.requests")).containsExactly("hello:error");
+    }
+
+    @Test
     void callerTimeoutIsRecordedInsteadOfTheLateResponse() throws Exception {
         CountDownLatch release = new CountDownLatch(1);
         CompletableFuture<JsonRpcSuccess> response = loopback
@@ -164,5 +175,13 @@ class JsonRpcMetricsTest {
     @FunctionalInterface
     private interface Handler {
         Object handle() throws Exception;
+    }
+
+    /**
+     * Jackson refuses to write an object that refers to itself.
+     */
+    private static class SelfReferencing {
+        @SuppressWarnings("unused")
+        final SelfReferencing self = this;
     }
 }
