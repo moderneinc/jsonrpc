@@ -16,6 +16,7 @@
 package io.moderne.jsonrpc.formatter;
 
 import io.moderne.jsonrpc.JsonRpcMessage;
+import io.moderne.jsonrpc.JsonRpcRequest;
 import io.moderne.jsonrpc.JsonRpcSuccess;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
@@ -28,11 +29,14 @@ import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static java.nio.charset.StandardCharsets.UTF_8;
 
@@ -118,6 +122,21 @@ public class JsonMessageFormatterTest {
         assertThat(success.getResult(List.class))
                 .isEqualTo(Arrays.asList(1, 2))
                 .isSameAs(success.getResult(List.class));
+    }
+
+    @Test
+    void serializeLeavesTheStreamOpen() throws IOException {
+        AtomicBoolean closed = new AtomicBoolean();
+        OutputStream out = new ByteArrayOutputStream() {
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+
+        formatter.serialize(JsonRpcRequest.newRequest("hello"), out);
+
+        assertThat(closed).isFalse();
     }
 
     @JsonDeserialize(using = OverflowingDeserializer.class)

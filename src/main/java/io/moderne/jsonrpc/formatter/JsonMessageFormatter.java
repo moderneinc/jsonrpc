@@ -18,6 +18,7 @@ package io.moderne.jsonrpc.formatter;
 import com.fasterxml.jackson.annotation.JsonAutoDetect;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonValue;
+import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonMappingException;
@@ -216,7 +217,7 @@ public class JsonMessageFormatter implements MessageFormatter {
 
     @Override
     public void serialize(JsonRpcMessage message, OutputStream out) throws IOException {
-        mapper.writeValue(out, message);
+        mapper.writer().without(JsonGenerator.Feature.AUTO_CLOSE_TARGET).writeValue(out, message);
     }
 
     @Override
