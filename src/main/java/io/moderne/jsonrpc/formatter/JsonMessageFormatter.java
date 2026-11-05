@@ -23,6 +23,7 @@ import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonMappingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.databind.cfg.ConstructorDetector;
 import com.fasterxml.jackson.databind.json.JsonMapper;
@@ -45,6 +46,7 @@ import java.util.function.Function;
 
 public class JsonMessageFormatter implements MessageFormatter {
     private final ObjectMapper mapper;
+    private final ObjectWriter writer;
 
     public JsonMessageFormatter() {
         this(JsonMapper.builder()
@@ -79,12 +81,17 @@ public class JsonMessageFormatter implements MessageFormatter {
 
     public JsonMessageFormatter(ObjectMapper mapper) {
         this.mapper = mapper;
+        // The writer sees the visibility the other constructors set after this returns, because
+        // the mapper shares its config overrides with its writers.
+        this.writer = mapper.writer().without(JsonGenerator.Feature.AUTO_CLOSE_TARGET);
     }
 
     @Override
     public JsonRpcMessage deserialize(InputStream in) throws IOException {
-        // Not closed: Jackson would close the caller's stream along with it.
-        return read(mapper.getFactory().createParser(in), id -> null);
+        try (JsonParser parser = mapper.getFactory().createParser(in)) {
+            parser.disable(JsonParser.Feature.AUTO_CLOSE_SOURCE);
+            return read(parser, id -> null);
+        }
     }
 
     @Override
@@ -95,8 +102,7 @@ public class JsonMessageFormatter implements MessageFormatter {
     @Override
     public JsonRpcMessage deserialize(byte[] content, int offset, int length,
                                       Function<Object, @Nullable Type> resultTypes) throws IOException {
-        // Closed, unlike the stream overload: there is no caller-owned source, and closing is what
-        // returns the parser's text and name buffers to Jackson's recycler.
+        // Closing is what returns the parser's buffers to Jackson's recycler.
         try (JsonParser parser = mapper.getFactory().createParser(content, offset, length)) {
             return read(parser, resultTypes);
         }
@@ -217,7 +223,7 @@ public class JsonMessageFormatter implements MessageFormatter {
 
     @Override
     public void serialize(JsonRpcMessage message, OutputStream out) throws IOException {
-        mapper.writer().without(JsonGenerator.Feature.AUTO_CLOSE_TARGET).writeValue(out, message);
+        writer.writeValue(out, message);
     }
 
     @Override

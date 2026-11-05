@@ -18,6 +18,7 @@ package io.moderne.jsonrpc.formatter;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.JsonRpcRequest;
 import io.moderne.jsonrpc.JsonRpcSuccess;
+import io.moderne.jsonrpc.RawJson;
 import com.fasterxml.jackson.core.JsonParseException;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -31,6 +32,7 @@ import org.junit.jupiter.api.Test;
 import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.lang.reflect.Type;
 import java.util.Arrays;
@@ -125,6 +127,21 @@ public class JsonMessageFormatterTest {
     }
 
     @Test
+    void deserializeLeavesTheStreamOpen() throws IOException {
+        AtomicBoolean closed = new AtomicBoolean();
+        InputStream in = new ByteArrayInputStream("{\"jsonrpc\":\"2.0\",\"id\":1}".getBytes(UTF_8)) {
+            @Override
+            public void close() {
+                closed.set(true);
+            }
+        };
+
+        formatter.deserialize(in);
+
+        assertThat(closed).isFalse();
+    }
+
+    @Test
     void serializeLeavesTheStreamOpen() throws IOException {
         AtomicBoolean closed = new AtomicBoolean();
         OutputStream out = new ByteArrayOutputStream() {
@@ -137,6 +154,24 @@ public class JsonMessageFormatterTest {
         formatter.serialize(JsonRpcRequest.newRequest("hello"), out);
 
         assertThat(closed).isFalse();
+    }
+
+    @Test
+    void serializeWritesAResultsFieldsAndNotItsGetters() throws IOException {
+        ByteArrayOutputStream out = new ByteArrayOutputStream();
+
+        formatter.serialize(new JsonRpcSuccess(1, RawJson.of(new FieldsAndGetter())), out);
+
+        assertThat(out.toString(UTF_8.name())).contains("\"result\":{\"name\":\"Jon\"}");
+    }
+
+    @SuppressWarnings("unused")
+    static class FieldsAndGetter {
+        private final String name = "Jon";
+
+        public String getGreeting() {
+            return "Hello";
+        }
     }
 
     @JsonDeserialize(using = OverflowingDeserializer.class)

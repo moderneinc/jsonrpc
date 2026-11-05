@@ -18,8 +18,11 @@ package io.moderne.jsonrpc.handler;
 import io.moderne.jsonrpc.JsonRpcMessage;
 import io.moderne.jsonrpc.JsonRpcReceiveException;
 import io.moderne.jsonrpc.formatter.MessageFormatter;
+import org.jspecify.annotations.Nullable;
 
 import java.io.*;
+import java.lang.reflect.Type;
+import java.util.function.Function;
 
 /**
  * This appends each JSON-RPC message with \n. It should only be used with UTF-8 text-based
@@ -48,6 +51,11 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
 
     @Override
     public JsonRpcMessage receive(MessageFormatter formatter) throws IOException {
+        return receive(formatter, id -> null);
+    }
+
+    @Override
+    public JsonRpcMessage receive(MessageFormatter formatter, Function<Object, @Nullable Type> resultTypes) throws IOException {
         ByteArrayOutputStream buffer = new ByteArrayOutputStream();
         int b = inputStream.read();
         if (b == -1) {
@@ -72,7 +80,7 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
         }
         byte[] content = buffer.toByteArray();
         try {
-            return formatter.deserialize(new ByteArrayInputStream(content));
+            return formatter.deserialize(content, 0, content.length, resultTypes);
         } catch (IOException e) {
             // Parse failure on a complete frame. Surface as JsonRpcReceiveException
             // so JsonRpc.bind() routes the error back to the peer rather than

@@ -31,6 +31,8 @@ import java.io.InputStream;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.TimeUnit;
 
@@ -50,6 +52,20 @@ class NewLineDelimitedMessageHandlerTest {
 
         assertThat(msg.getMethod()).isEqualTo("ping");
         assertThat(msg.getId()).isEqualTo(1);
+    }
+
+    @Test
+    void receiveDecodesAResultOnArrivalToTheTypeItsRequestExpects() throws Exception {
+        InputStream in = new ByteArrayInputStream(
+                "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"k\":1}}\n".getBytes(StandardCharsets.UTF_8));
+        NewLineDelimitedMessageHandler handler = new NewLineDelimitedMessageHandler(in, new ByteArrayOutputStream());
+
+        JsonRpcSuccess success = (JsonRpcSuccess) handler.receive(FORMATTER, id -> Map.class);
+
+        // A result decoded on arrival is handed out as decoded.
+        assertThat(success.getResult(Map.class))
+                .isEqualTo(Collections.singletonMap("k", 1))
+                .isSameAs(success.getResult(Map.class));
     }
 
     @Test
@@ -120,13 +136,16 @@ class NewLineDelimitedMessageHandlerTest {
             // A partial line glued to the error reply would arrive as an Invalid Request (-32600).
             assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
                     .cause()
-                    .isInstanceOf(JsonRpcException.class)
-                    .hasMessageStartingWith("{code=-32603");
+                    .isInstanceOfSatisfying(JsonRpcException.class, e ->
+                            assertThat(e.getError().getError().getCode()).isEqualTo(-32603));
         } finally {
             loopback.shutdown();
         }
     }
 
+    /**
+     * Jackson refuses to write an object that refers to itself.
+     */
     private static class SelfReferencing {
         @SuppressWarnings("unused")
         final SelfReferencing self = this;
