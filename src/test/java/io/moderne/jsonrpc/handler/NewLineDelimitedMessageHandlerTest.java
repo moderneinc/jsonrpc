@@ -15,8 +15,12 @@
  */
 package io.moderne.jsonrpc.handler;
 
+import io.moderne.jsonrpc.JsonRpc;
+import io.moderne.jsonrpc.JsonRpcException;
+import io.moderne.jsonrpc.JsonRpcMethod;
 import io.moderne.jsonrpc.JsonRpcReceiveException;
 import io.moderne.jsonrpc.JsonRpcRequest;
+import io.moderne.jsonrpc.JsonRpcSuccess;
 import io.moderne.jsonrpc.formatter.JsonMessageFormatter;
 import org.junit.jupiter.api.Test;
 
@@ -24,7 +28,11 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.EOFException;
 import java.io.InputStream;
+import java.io.PipedInputStream;
+import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -92,5 +100,35 @@ class NewLineDelimitedMessageHandlerTest {
         assertThatThrownBy(() -> handler.receive(FORMATTER))
                 .isInstanceOfSatisfying(JsonRpcReceiveException.class, e ->
                     assertThat(e.toError().getId()).isEqualTo(42));
+    }
+
+    @Test
+    void replyThatFailsToSerializeReachesThePeerAsAnInternalError() throws Exception {
+        PipedOutputStream os = new PipedOutputStream();
+        JsonRpc loopback = new JsonRpc(new NewLineDelimitedMessageHandler(new PipedInputStream(os), os), FORMATTER);
+        try {
+            CompletableFuture<JsonRpcSuccess> response = loopback
+                    .rpc("hello", new JsonRpcMethod<Void>() {
+                        @Override
+                        protected Object handle(Void params) {
+                            return new SelfReferencing();
+                        }
+                    })
+                    .bind()
+                    .send(JsonRpcRequest.newRequest("hello"));
+
+            // A partial line glued to the error reply would arrive as an Invalid Request (-32600).
+            assertThatThrownBy(() -> response.get(5, TimeUnit.SECONDS))
+                    .cause()
+                    .isInstanceOf(JsonRpcException.class)
+                    .hasMessageStartingWith("{code=-32603");
+        } finally {
+            loopback.shutdown();
+        }
+    }
+
+    private static class SelfReferencing {
+        @SuppressWarnings("unused")
+        final SelfReferencing self = this;
     }
 }

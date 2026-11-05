@@ -29,6 +29,13 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
     private final InputStream inputStream;
     private final OutputStream outputStream;
 
+    /**
+     * Holds each message whole before any of it is written, so a message that fails to serialize
+     * writes nothing and the next one starts on a line of its own. Reused across sends, as in
+     * {@link HeaderDelimitedMessageHandler}, and guarded by the {@code outputStream} monitor.
+     */
+    private final ByteArrayOutputStream sendBuffer = new ByteArrayOutputStream();
+
     public NewLineDelimitedMessageHandler(InputStream inputStream, OutputStream outputStream) {
         // Same buffering policy as HeaderDelimitedMessageHandler: read-loop is
         // byte-by-byte until newline; buffer once at construction so we don't
@@ -80,8 +87,10 @@ public class NewLineDelimitedMessageHandler implements MessageHandler {
     public void send(JsonRpcMessage msg, MessageFormatter formatter) {
         try {
             synchronized (outputStream) {
-                formatter.serialize(msg, outputStream);
-                outputStream.write(new byte[]{'\n'});
+                sendBuffer.reset();
+                formatter.serialize(msg, sendBuffer);
+                sendBuffer.write('\n');
+                sendBuffer.writeTo(outputStream);
                 outputStream.flush();
             }
         } catch (IOException e) {
