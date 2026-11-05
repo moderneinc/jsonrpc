@@ -30,7 +30,6 @@ import java.io.IOException;
 import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -182,25 +181,6 @@ public class JsonRpcTest {
                 .bind()
                 .notify(JsonRpcRequest.newRequest("hello", new Person("Jon")));
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-    }
-
-    @Test
-    void notificationIsSentWithoutAnId() {
-        List<JsonRpcMessage> sent = new ArrayList<>();
-        new JsonRpc(new MessageHandler() {
-            @Override
-            public JsonRpcMessage receive(MessageFormatter formatter) {
-                throw new UnsupportedOperationException();
-            }
-
-            @Override
-            public void send(JsonRpcMessage msg, MessageFormatter formatter) {
-                sent.add(msg);
-            }
-        }, formatter).notify(JsonRpcRequest.newRequest("hello"));
-
-        assertThat(sent).singleElement()
-                .isInstanceOfSatisfying(JsonRpcRequest.class, request -> assertThat(request.getId()).isNull());
     }
 
     @Test
