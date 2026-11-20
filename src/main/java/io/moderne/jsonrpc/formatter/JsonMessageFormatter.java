@@ -22,6 +22,7 @@ import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.core.JsonToken;
 import com.fasterxml.jackson.databind.JsonMappingException;
+import com.fasterxml.jackson.databind.Module;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectWriter;
 import com.fasterxml.jackson.databind.SerializationFeature;
@@ -64,7 +65,7 @@ public class JsonMessageFormatter implements MessageFormatter {
                 .withFieldVisibility(JsonAutoDetect.Visibility.ANY));
     }
 
-    public JsonMessageFormatter(com.fasterxml.jackson.databind.Module... modules) {
+    public JsonMessageFormatter(Module... modules) {
         this(JsonMapper.builder()
                 .constructorDetector(ConstructorDetector.USE_PROPERTIES_BASED)
                 .build()
